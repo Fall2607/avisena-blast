@@ -6,6 +6,9 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
 
+# Install git and build dependencies (some npm packages need git to download)
+RUN apk add --no-cache git python3 make g++
+
 # Install dependencies
 RUN npm install
 
