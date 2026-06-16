@@ -1,0 +1,44 @@
++--------------------------------------------------------------------------------------------------+
+|  WA Blast Enterprise                                       [User Profile]  [Notification]        |
++--------------------------------------------------------------------------------------------------+
+|                    |                                                                             |
+|  [ ] Dashboard     |   +---------------------------------------------------------------------+   |
+|                    |   |  Selamat Datang, Admin                                              |   |
+|  [ ] WA Session    |   |  Berikut ringkasan performa hari ini.                               |   |
+|                    |   +---------------------------------------------------------------------+   |
+|  [ ] Contacts      |                                                                             |
+|                    |   +------------+   +------------+   +------------+   +------------------+   |
+|  [ ] Templates     |   | Total      |   | WhatsApp   |   | Total Blast|   | Pesan Terkirim   |   |
+|                    |   | Kontak     |   | Status     |   | Hari Ini   |   |                  |   |
+|  [ ] Blast         |   | 12,345     |   | CONNECTED  |   | 8 Campaign |   | 1,204 Sukses     |   |
+|                    |   +------------+   +------------+   +------------+   +------------------+   |
+|                    |                                                                             |
+|                    |   +---------------------------------------+  +--------------------------+   |
+|                    |   |  Statistik Pengiriman                 |  |  Campaign Terbaru        |   |
+|                    |   |                                       |  |                          |   |
+|                    |   |         /|                 /|         |  | * Promo Lebaran 1        |   |
+|                    |   |        / |                / |         |  |   Target: VIP            |   |
+|                    |   |       /  |___        ____/  |         |  |   Status: Selesai        |   |
+|                    |   |  ____/       \      /       |         |  |                          |   |
+|                    |   | /             \____/        |         |  | * Promo Akhir Tahun      |   |
+|                    |   |/                            |         |  |   Target: Semua Kontak   |   |
+|                    |   +---------------------------------------+  +--------------------------+   |
+|                    |                                                                             |
++--------------------+-----------------------------------------------------------------------------+
+
+Form Blast Scheduler:
++--------------------------------------------------------------------------------------------------+
+|  Formulir Campaign Blast                                                                         |
+|  Pilih target, template, dan atur delay untuk menghindari blokir WhatsApp.                       |
+|                                                                                                  |
+|  Nama Campaign            [ Promo Akhir Tahun                                            ]       |
+|  Sesi WhatsApp Pengirim   [ CS-Utama (+628123456789)                                     v]      |
+|  Template Pesan           [ Template Diskon 50%                                          v]      |
+|  Grup Target              [ Pelanggan VIP (500 Kontak)                                   v]      |
+|                                                                                                  |
+|  Anti-Spam Delay Setting                                  Scheduler (Opsional)                   |
+|  Min Delay (dtk) [ 5   ]                                  Jadwal Kirim                           |
+|  Max Delay (dtk) [ 15  ]                                  [ DD/MM/YYYY HH:mm            ]        |
+|                                                                                                  |
+|                                                     [ Batal ]  [ Mulai Blast / Jadwalkan ]       |
++--------------------------------------------------------------------------------------------------+

@@ -1,0 +1,116 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String @unique // Super Admin, Admin, Operator, Viewer
+  users User[]
+
+  @@map("roles")
+}
+
+model User {
+  id         String   @id @default(uuid())
+  name       String
+  email      String   @unique
+  password   String
+  roleId     Int      @map("role_id")
+  role       Role     @relation(fields: [roleId], references: [id])
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model WhatsappSession {
+  id           String   @id @default(uuid())
+  sessionName  String   @unique @map("session_name")
+  status       String   @default("DISCONNECTED") // CONNECTED, DISCONNECTED, CONNECTING
+  phoneNumber  String?  @map("phone_number")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  messages     MessageLog[]
+
+  @@map("whatsapp_sessions")
+}
+
+model ContactGroup {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  contacts    Contact[]
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("contact_groups")
+}
+
+model Contact {
+  id                 String              @id @default(uuid())
+  name               String
+  phone              String              @unique
+  email              String?
+  groupId            String?             @map("group_id")
+  group              ContactGroup?       @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  campaignRecipients CampaignRecipient[]
+
+  @@map("contacts")
+}
+
+model Template {
+  id        String     @id @default(uuid())
+  name      String
+  message   String     @db.Text
+  variables Json?      // e.g. ["nama", "tanggal"]
+  campaigns Campaign[]
+
+  @@map("templates")
+}
+
+model Campaign {
+  id          String              @id @default(uuid())
+  name        String
+  templateId  String              @map("template_id")
+  template    Template            @relation(fields: [templateId], references: [id])
+  scheduledAt DateTime?           @map("scheduled_at")
+  status      String              @default("DRAFT") // DRAFT, SCHEDULED, RUNNING, COMPLETED, CANCELLED
+  recipients  CampaignRecipient[]
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  @@map("campaigns")
+}
+
+model CampaignRecipient {
+  id           String    @id @default(uuid())
+  campaignId   String    @map("campaign_id")
+  campaign     Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId    String    @map("contact_id")
+  contact      Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  status       String    @default("PENDING") // PENDING, PROCESSING, SENT, FAILED
+  sentAt       DateTime? @map("sent_at")
+  errorMessage String?   @db.Text @map("error_message")
+
+  @@unique([campaignId, contactId])
+  @@map("campaign_recipients")
+}
+
+model MessageLog {
+  id         String          @id @default(uuid())
+  sessionId  String          @map("session_id")
+  session    WhatsappSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  phone      String
+  message    String          @db.Text
+  status     String          // SENT, FAILED
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  @@map("message_logs")
+}

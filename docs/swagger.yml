@@ -1,0 +1,129 @@
+openapi: 3.0.0
+info:
+  title: WhatsApp Blast Enterprise API
+  description: API Documentation for WhatsApp Blast Enterprise Monorepo
+  version: 1.0.0
+servers:
+  - url: http://localhost:5000/api
+    description: Local Development Server
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/login:
+    post:
+      summary: Login to get access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  example: admin@example.com
+                password:
+                  type: string
+                  example: password123
+      responses:
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    type: object
+
+  /wa/session:
+    post:
+      summary: Create a new WhatsApp session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionName:
+                  type: string
+                  example: CS-01
+      responses:
+        '200':
+          description: Session initialization started
+
+  /wa/session/{sessionName}/qr:
+    get:
+      summary: Get QR Code via Server-Sent Events (SSE)
+      parameters:
+        - in: path
+          name: sessionName
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSE stream with QR code
+
+  /campaigns:
+    post:
+      summary: Create and run/schedule a blast campaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: Promo Lebaran
+                templateId:
+                  type: string
+                groupId:
+                  type: string
+                sessionName:
+                  type: string
+                minDelaySec:
+                  type: number
+                  example: 5
+                maxDelaySec:
+                  type: number
+                  example: 15
+                scheduledAt:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: Campaign created successfully
+
+  /contacts/import:
+    post:
+      summary: Import contacts from CSV/Excel
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                groupId:
+                  type: string
+      responses:
+        '200':
+          description: Contacts imported successfully

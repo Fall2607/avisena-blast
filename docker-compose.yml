@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: blast_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: whatsapp_blast
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - blast_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: blast_redis
+    restart: always
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - blast_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  blast_network:
+    driver: bridge
