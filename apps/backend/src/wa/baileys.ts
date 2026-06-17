@@ -127,7 +127,11 @@ export const deleteSession = async (sessionId: string) => {
 
   const sessionPath = path.join(SESSIONS_DIR, sessionId);
   if (fs.existsSync(sessionPath)) {
-    fs.rmSync(sessionPath, { recursive: true, force: true });
+    try {
+      fs.rmSync(sessionPath, { recursive: true, force: true });
+    } catch (err) {
+      logger.error(err, `Failed to delete session directory for ${sessionId}`);
+    }
   }
 
   try {
