@@ -130,8 +130,11 @@ export const deleteSession = async (sessionId: string) => {
     fs.rmSync(sessionPath, { recursive: true, force: true });
   }
 
-  await prisma.whatsappSession.update({
-    where: { sessionName: sessionId },
-    data: { status: 'DISCONNECTED', phoneNumber: null }
-  });
+  try {
+    await prisma.whatsappSession.delete({
+      where: { sessionName: sessionId }
+    });
+  } catch (error) {
+    logger.error(`Failed to delete session ${sessionId} from DB: ${error}`);
+  }
 };
