@@ -172,11 +172,9 @@ export default function GroupContactsPage() {
           </Button>
 
           <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
-            <DialogTrigger asChild>
-              <Button variant="secondary" className="flex-1 md:flex-none">
-                <Users className="w-4 h-4 mr-2" />
-                Import Teks
-              </Button>
+            <DialogTrigger render={<Button variant="secondary" className="flex-1 md:flex-none" />}>
+              <Users className="w-4 h-4 mr-2" />
+              Import Teks
             </DialogTrigger>
             <DialogContent className="sm:max-w-[600px]">
               <DialogHeader>
@@ -206,11 +204,9 @@ export default function GroupContactsPage() {
           </Dialog>
 
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button className="flex-1 md:flex-none">
-                <Plus className="w-4 h-4 mr-2" />
-                Tambah Manual
-              </Button>
+            <DialogTrigger render={<Button className="flex-1 md:flex-none" />}>
+              <Plus className="w-4 h-4 mr-2" />
+              Tambah Manual
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
