@@ -22,6 +22,8 @@ export default function GroupContactsPage() {
   
   // Modal states
   const [open, setOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState("");
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
@@ -65,6 +67,55 @@ export default function GroupContactsPage() {
     } catch (e) {
       console.error(e);
       alert("Gagal import kontak");
+    }
+  };
+
+  const handleBulkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bulkText.trim()) return;
+
+    const lines = bulkText.split('\n');
+    let csvContent = 'name,phone\n';
+    let validCount = 0;
+
+    lines.forEach(line => {
+      // Pemisah otomatis: tab, koma, atau titik koma
+      const parts = line.split(/[\t,;]+/);
+      if (parts.length >= 2) {
+        const name = parts[0].trim().replace(/"/g, '""'); // escape nama
+        let phone = parts[1].trim().replace(/\D/g, ''); // hanya ambil angka
+
+        if (name && phone) {
+          csvContent += `"${name}","${phone}"\n`;
+          validCount++;
+        }
+      }
+    });
+
+    if (validCount === 0) {
+      alert("Tidak ada data kontak yang valid ditemukan. Pastikan format: Nama, NomorTelepon");
+      return;
+    }
+
+    try {
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const virtualFile = new File([blob], 'bulk_import.csv', { type: 'text/csv' });
+
+      const uploadData = new FormData();
+      uploadData.append("file", virtualFile);
+      uploadData.append("groupId", groupId as string);
+
+      await api.post("/contacts/import", uploadData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      
+      setBulkOpen(false);
+      setBulkText("");
+      fetchData();
+      alert(`Berhasil mengimpor ${validCount} kontak sekaligus!`);
+    } catch (e) {
+      console.error(e);
+      alert("Gagal memproses import teks");
     }
   };
 
@@ -117,12 +168,49 @@ export default function GroupContactsPage() {
           />
           <Button variant="outline" onClick={handleImport} disabled={!file} className="flex-1 md:flex-none">
             <Upload className="w-4 h-4 mr-2" />
-            Import CSV
+            File CSV
           </Button>
+
+          <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+            <DialogTrigger asChild>
+              <Button variant="secondary" className="flex-1 md:flex-none">
+                <Users className="w-4 h-4 mr-2" />
+                Import Teks
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px]">
+              <DialogHeader>
+                <DialogTitle>Import Kontak via Teks</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleBulkSubmit} className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="bulkText">Paste Data Kontak Anda (Satu per baris)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Format: <strong>Nama, Nomor WhatsApp</strong>. Pemisah bisa menggunakan Koma (,), Tab (dari Excel), atau Titik Koma (;).
+                  </p>
+                  <textarea
+                    id="bulkText"
+                    value={bulkText}
+                    onChange={(e) => setBulkText(e.target.value)}
+                    required
+                    placeholder="Budi Santoso, 628123456789&#10;Siti Aminah, 085712345678&#10;Agus; 08122334455"
+                    className="flex min-h-[250px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setBulkOpen(false)}>Batal</Button>
+                  <Button type="submit">Proses & Simpan</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger render={<Button className="flex-1 md:flex-none" />}>
-              <Plus className="w-4 h-4 mr-2" />
-              Tambah Kontak
+            <DialogTrigger asChild>
+              <Button className="flex-1 md:flex-none">
+                <Plus className="w-4 h-4 mr-2" />
+                Tambah Manual
+              </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
