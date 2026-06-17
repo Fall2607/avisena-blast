@@ -2,24 +2,89 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Smartphone, RefreshCw, Trash2, CheckCircle2, AlertCircle, Key } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Smartphone, RefreshCw, Trash2, CheckCircle2, Key, Plus, WifiOff, Activity } from "lucide-react";
 import api from "@/lib/axios";
-
 import Cookies from 'js-cookie';
+import { cn } from "@/lib/utils";
+
+interface Session {
+  id: string;
+  sessionName: string;
+  status: string;
+  phoneNumber?: string | null;
+  createdAt: string;
+}
 
 export default function SessionPage() {
-  const [sessionName, setSessionName] = useState("");
-  const [status, setStatus] = useState<string>("DISCONNECTED");
-  const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
-  const [qrCode, setQrCode] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Add Session Modal State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newSessionName, setNewSessionName] = useState("");
   const [usePairingCode, setUsePairingCode] = useState(false);
   const [inputPhoneNumber, setInputPhoneNumber] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Connection Modal State
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [activeConnectingSession, setActiveConnectingSession] = useState<string | null>(null);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+
+  const fetchSessions = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/wa/sessions');
+      setSessions(res.data);
+    } catch (e) {
+      console.error("Failed to fetch sessions", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSessions();
+  }, []);
+
+  const handleAddSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSessionName) return;
+    setIsSubmitting(true);
+    try {
+      await api.post("/wa/session", { 
+        sessionName: newSessionName,
+        phoneNumber: usePairingCode ? inputPhoneNumber : undefined
+      });
+      setIsAddModalOpen(false);
+      setNewSessionName("");
+      setInputPhoneNumber("");
+      setUsePairingCode(false);
+      
+      // Immediately open connection modal for the new session
+      setActiveConnectingSession(newSessionName);
+      setIsConnectModalOpen(true);
+      startQrStream(newSessionName);
+      fetchSessions();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleConnectExisting = (sessionName: string) => {
+    setActiveConnectingSession(sessionName);
+    setIsConnectModalOpen(true);
+    startQrStream(sessionName);
+  };
 
   const startQrStream = (name: string) => {
+    setQrCode(null);
     const token = Cookies.get('token');
     const eventSource = new EventSource(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/wa/session/${name}/qr?token=${token}`);
     
@@ -27,16 +92,17 @@ export default function SessionPage() {
       const data = JSON.parse(event.data);
       if (data.qr) {
         setQrCode(data.qr);
-        setStatus("CONNECTING");
       }
       if (data.connected) {
-        setStatus("CONNECTED");
-        checkStatus(name);
         eventSource.close();
+        setIsConnectModalOpen(false);
+        setActiveConnectingSession(null);
+        fetchSessions(); // Refresh list to show connected status
       }
       if (data.error) {
-        setStatus("DISCONNECTED");
         eventSource.close();
+        setIsConnectModalOpen(false);
+        fetchSessions();
       }
     };
 
@@ -45,189 +111,205 @@ export default function SessionPage() {
     };
   };
 
-  const checkStatus = async (name: string) => {
-    try {
-      const res = await api.get(`/wa/session/${name}/status`);
-      setStatus(res.data.status);
-      setPhoneNumber(res.data.phoneNumber);
-
-      if (res.data.status === "CONNECTING") {
-        startQrStream(name);
-      }
-    } catch (e) {
-      setStatus("DISCONNECTED");
-    }
-  };
-
-  const connectSession = async () => {
-    if (!sessionName) return;
-    setLoading(true);
-    setQrCode(null);
-    try {
-      await api.post("/wa/session", { 
-        sessionName,
-        phoneNumber: usePairingCode ? inputPhoneNumber : undefined
-      });
-      startQrStream(sessionName);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const disconnectSession = async () => {
-    if (!sessionName) return;
-    setLoading(true);
+  const disconnectSession = async (sessionName: string) => {
+    if (!confirm(`Anda yakin ingin menghapus perangkat "${sessionName}"?\nIni akan memutuskan koneksi WhatsApp yang tertaut.`)) return;
     try {
       await api.delete(`/wa/session/${sessionName}`);
-      setStatus("DISCONNECTED");
-      setQrCode(null);
-      setPhoneNumber(null);
+      fetchSessions();
     } catch (error) {
       console.error(error);
-    } finally {
-      setLoading(false);
     }
+  };
+
+  const formatTime = (isoString: string) => {
+    return new Date(isoString).toLocaleString('id-ID', {
+      day: 'numeric', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
   };
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-4xl font-extrabold tracking-tight text-gradient">WhatsApp Session</h1>
-        <p className="text-muted-foreground text-lg">
-          Hubungkan nomor WhatsApp yang akan digunakan untuk mengirim blast.
-        </p>
+    <div className="space-y-6 max-w-5xl mx-auto pb-10">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">WhatsApp Sessions</h1>
+          <p className="text-muted-foreground mt-1">Kelola daftar nomor WhatsApp yang terhubung ke sistem.</p>
+        </div>
+        <Button onClick={() => setIsAddModalOpen(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          Tambah Perangkat
+        </Button>
       </div>
 
-      <Card className="shadow-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Smartphone className="w-5 h-5 text-primary" />
-            Device Connection
-          </CardTitle>
-          <CardDescription>
-            Masukkan nama sesi (bebas) untuk mengidentifikasi device ini.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="sessionName">Session Name</Label>
-            <div className="flex gap-2">
+      {loading ? (
+        <div className="flex justify-center items-center h-64">
+          <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      ) : sessions.length === 0 ? (
+        <Card className="flex flex-col items-center justify-center py-16 text-center border-dashed bg-transparent shadow-none">
+          <Smartphone className="w-12 h-12 text-muted-foreground mb-4 opacity-50" />
+          <h3 className="text-lg font-bold">Belum ada sesi aktif</h3>
+          <p className="text-muted-foreground max-w-sm mt-2 mb-6">
+            Anda belum menghubungkan akun WhatsApp mana pun. Klik Tambah Perangkat untuk memulai.
+          </p>
+          <Button onClick={() => setIsAddModalOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Tambah Perangkat
+          </Button>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {sessions.map((session) => (
+            <Card key={session.id} className="flex flex-col">
+              <CardHeader className="pb-3 border-b border-border/50">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <CardTitle className="text-lg">{session.sessionName}</CardTitle>
+                    <div className="flex items-center gap-1.5 mt-1 text-sm text-muted-foreground">
+                      <Smartphone className="w-3.5 h-3.5" />
+                      {session.phoneNumber || "Belum ada nomor"}
+                    </div>
+                  </div>
+                  <div className={cn(
+                    "px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wider flex items-center gap-1.5 uppercase",
+                    session.status === 'CONNECTED' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                    session.status === 'CONNECTING' ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                    "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                  )}>
+                    {session.status === 'CONNECTED' && <CheckCircle2 className="w-3 h-3" />}
+                    {session.status === 'CONNECTING' && <RefreshCw className="w-3 h-3 animate-spin" />}
+                    {session.status === 'DISCONNECTED' && <WifiOff className="w-3 h-3" />}
+                    {session.status}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="flex-1 py-4 text-sm space-y-3">
+                 <div className="flex justify-between items-center">
+                   <span className="text-muted-foreground flex items-center gap-2"><Activity className="w-4 h-4"/> Dibuat pada</span>
+                   <span className="font-medium text-right">{formatTime(session.createdAt)}</span>
+                 </div>
+              </CardContent>
+              <CardFooter className="pt-4 border-t border-border/50 flex gap-2 justify-end">
+                 {session.status !== 'CONNECTED' && (
+                   <Button variant="outline" size="sm" onClick={() => handleConnectExisting(session.sessionName)} className="flex-1">
+                     <RefreshCw className="w-3.5 h-3.5 mr-2" />
+                     Reconnect
+                   </Button>
+                 )}
+                 <Button variant="destructive" size="sm" onClick={() => disconnectSession(session.sessionName)} className={session.status === 'CONNECTED' ? "flex-1" : ""}>
+                   <Trash2 className="w-4 h-4 mr-2" />
+                   {session.status === 'CONNECTED' ? "Disconnect & Delete" : "Hapus"}
+                 </Button>
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Add Device Modal */}
+      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tambah Perangkat WhatsApp</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAddSession} className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label htmlFor="sessionName">Nama Sesi (Unik)</Label>
               <Input 
                 id="sessionName" 
-                placeholder="misal: CS-Utama" 
-                value={sessionName}
-                onChange={(e) => setSessionName(e.target.value)}
-                disabled={status === "CONNECTED" || status === "CONNECTING"}
+                placeholder="Contoh: CS-Pusat" 
+                value={newSessionName}
+                onChange={(e) => setNewSessionName(e.target.value.replace(/\s+/g, '-'))}
+                required
               />
-              <Button 
-                variant="outline" 
-                onClick={() => checkStatus(sessionName)}
-                disabled={!sessionName}
-              >
-                Cek Status
+              <p className="text-xs text-muted-foreground">Tidak boleh ada spasi (akan diubah otomatis menjadi strip).</p>
+            </div>
+            <div className="space-y-2 pt-2">
+              <div className="flex items-center space-x-2">
+                <input 
+                  type="checkbox" 
+                  id="usePairingCode" 
+                  checked={usePairingCode}
+                  onChange={(e) => setUsePairingCode(e.target.checked)}
+                  className="w-4 h-4 text-primary rounded border-border focus:ring-primary"
+                />
+                <Label htmlFor="usePairingCode">Gunakan Kode Pairing (Link with Phone Number)</Label>
+              </div>
+            </div>
+            {usePairingCode && (
+              <div className="space-y-2">
+                <Label htmlFor="inputPhoneNumber">Nomor Telepon WA</Label>
+                <Input 
+                  id="inputPhoneNumber" 
+                  placeholder="Contoh: 6281234567890" 
+                  value={inputPhoneNumber}
+                  onChange={(e) => setInputPhoneNumber(e.target.value)}
+                  required={usePairingCode}
+                />
+                <p className="text-xs text-muted-foreground">Awali dengan 62 tanpa + atau spasi.</p>
+              </div>
+            )}
+            <DialogFooter className="pt-4">
+              <Button type="button" variant="outline" onClick={() => setIsAddModalOpen(false)}>Batal</Button>
+              <Button type="submit" disabled={!newSessionName || isSubmitting}>
+                {isSubmitting ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+                Buat Sesi
               </Button>
-            </div>
-          </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-          <div className="space-y-2">
-            <div className="flex items-center space-x-2">
-              <input 
-                type="checkbox" 
-                id="usePairingCode" 
-                checked={usePairingCode}
-                onChange={(e) => setUsePairingCode(e.target.checked)}
-                disabled={status === "CONNECTED" || status === "CONNECTING"}
-                className="w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary"
-              />
-              <Label htmlFor="usePairingCode">Gunakan Nomor Telepon (Tanpa Scan QR)</Label>
-            </div>
-          </div>
-
-          {usePairingCode && (
-            <div className="space-y-2">
-              <Label htmlFor="inputPhoneNumber">Nomor Telepon WhatsApp Target</Label>
-              <Input 
-                id="inputPhoneNumber" 
-                placeholder="misal: 6281234567890" 
-                value={inputPhoneNumber}
-                onChange={(e) => setInputPhoneNumber(e.target.value)}
-                disabled={status === "CONNECTED" || status === "CONNECTING"}
-              />
-              <p className="text-xs text-muted-foreground">Gunakan kode negara (62) tanpa simbol + atau spasi.</p>
-            </div>
-          )}
-
-          <div className="mt-6 border rounded-lg p-6 flex flex-col items-center justify-center min-h-[300px] bg-slate-50 dark:bg-slate-900">
-            {status === "CONNECTED" ? (
-              <div className="text-center space-y-4">
-                <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-                  <CheckCircle2 className="w-10 h-10" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-emerald-600">Terhubung</h3>
-                  <p className="text-muted-foreground mt-1">
-                    WhatsApp terhubung ke nomor: <span className="font-semibold">{phoneNumber}</span>
+      {/* Connection / QR Stream Modal */}
+      <Dialog open={isConnectModalOpen} onOpenChange={(open) => {
+        setIsConnectModalOpen(open);
+        if (!open) fetchSessions(); // refresh on close
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-center">Menghubungkan: {activeConnectingSession}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center p-6 min-h-[300px]">
+            {qrCode ? (
+              qrCode.startsWith('PAIRING_CODE:') ? (
+                <div className="text-center space-y-6">
+                  <h3 className="text-lg font-medium text-primary flex items-center justify-center gap-2">
+                    <Key className="w-5 h-5" />
+                    Masukkan Kode Ini di HP Anda
+                  </h3>
+                  <div className="bg-surface p-6 rounded-xl border border-border shadow-sm inline-block">
+                    <span className="text-4xl font-extrabold tracking-[0.25em] text-foreground">
+                      {qrCode.split(':')[1]}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Buka WhatsApp {'>'} Linked Devices {'>'} Link with phone number
                   </p>
                 </div>
-              </div>
-            ) : status === "CONNECTING" && qrCode ? (
-              <div className="text-center space-y-4">
-                {qrCode.startsWith('PAIRING_CODE:') ? (
-                  <>
-                    <h3 className="text-lg font-medium text-primary flex items-center justify-center gap-2">
-                      <Key className="w-5 h-5" />
-                      Masukkan Kode Ini di HP Anda
-                    </h3>
-                    <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-lg border-2 border-primary/20 inline-block transform transition-transform hover:scale-105">
-                      <span className="text-5xl font-extrabold tracking-widest text-gradient">
-                        {qrCode.split(':')[1]}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Buka WhatsApp {'>'} Linked Devices {'>'} Link with phone number
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <h3 className="text-lg font-medium">Scan QR Code ini dengan WhatsApp Anda</h3>
-                    <div className="bg-white p-4 rounded-lg shadow-sm inline-block">
-                      <img src={qrCode} alt="QR Code" className="w-64 h-64" />
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Buka WhatsApp {'>'} Linked Devices {'>'} Link a Device
-                    </p>
-                  </>
-                )}
-              </div>
-            ) : status === "CONNECTING" && !qrCode ? (
-              <div className="text-center space-y-4 text-muted-foreground">
-                <RefreshCw className="w-10 h-10 animate-spin mx-auto text-primary" />
-                <p>Membuat sesi dan mengambil QR Code...</p>
-              </div>
+              ) : (
+                <div className="text-center space-y-4">
+                  <h3 className="text-lg font-medium">Scan QR Code</h3>
+                  <div className="bg-white p-4 rounded-lg shadow-sm border inline-block">
+                    <img src={qrCode} alt="QR Code" className="w-64 h-64" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Buka WhatsApp {'>'} Linked Devices {'>'} Link a Device
+                  </p>
+                </div>
+              )
             ) : (
               <div className="text-center space-y-4 text-muted-foreground">
-                <AlertCircle className="w-12 h-12 mx-auto opacity-20" />
-                <p>Silakan klik Connect untuk menghubungkan WhatsApp.</p>
+                <RefreshCw className="w-10 h-10 animate-spin mx-auto text-primary" />
+                <p>Meminta kode koneksi dari WhatsApp...</p>
+                <p className="text-xs">Tunggu sebentar, sedang menginisialisasi sesi di server.</p>
               </div>
             )}
           </div>
-        </CardContent>
-        <CardFooter className="flex justify-end gap-2 border-t pt-6">
-          {status === "CONNECTED" ? (
-            <Button variant="destructive" onClick={disconnectSession} disabled={loading}>
-              <Trash2 className="w-4 h-4 mr-2" />
-              Disconnect
-            </Button>
-          ) : (
-            <Button onClick={connectSession} disabled={!sessionName || loading}>
-              <Smartphone className="w-4 h-4 mr-2" />
-              Connect Device
-            </Button>
-          )}
-        </CardFooter>
-      </Card>
+          <DialogFooter className="sm:justify-center">
+             <Button variant="outline" onClick={() => setIsConnectModalOpen(false)}>Tutup</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
