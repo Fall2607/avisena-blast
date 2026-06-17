@@ -35,18 +35,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#10162C] via-[#212842] to-[#00A79C]/20 p-4 font-sans">
-      <Card className="w-full max-w-md shadow-2xl border-0 overflow-hidden backdrop-blur-sm bg-white/95 dark:bg-[#151d38]/95 transform transition-all hover:scale-[1.01] duration-300">
-        <div className="h-2 w-full bg-gradient-to-r from-primary via-accent to-primary" />
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 font-sans">
+      <Card className="w-full max-w-md shadow-sm border border-border bg-surface dark:bg-[#0F172A] transform transition-all hover:shadow-md duration-300">
         <CardHeader className="space-y-1 items-center pt-8">
-          <div className="w-16 h-16 bg-gradient-to-tr from-primary to-accent rounded-2xl flex items-center justify-center mb-4 shadow-lg transform rotate-3 hover:rotate-0 transition-transform">
-            <MessageSquare className="w-8 h-8 text-white" />
+          <div className="w-12 h-12 bg-primary rounded-[10px] flex items-center justify-center mb-4 shadow-sm">
+            <MessageSquare className="w-6 h-6 text-white" />
           </div>
-          <CardTitle className="text-3xl font-bold tracking-tight text-center text-[#10162C] dark:text-white">
-            WA Blast
+          <CardTitle className="text-[24px] font-bold tracking-tight text-center text-foreground">
+            WhatsApp Blast
           </CardTitle>
-          <CardDescription className="text-center text-[#B2B5B3]">
-            Masuk ke portal enterprise Anda
+          <CardDescription className="text-center text-muted-foreground">
+            Sign in to your enterprise portal
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleLogin}>
@@ -83,8 +82,8 @@ export default function LoginPage() {
               />
             </div>
           </CardContent>
-          <CardFooter>
-            <Button type="submit" className="w-full bg-gradient-to-r from-primary to-accent hover:opacity-90 text-white font-medium transition-all shadow-md hover:shadow-lg" disabled={loading}>
+          <CardFooter className="pb-8 bg-transparent border-t-0">
+            <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-white font-medium shadow-sm transition-all" disabled={loading}>
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
