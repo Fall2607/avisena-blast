@@ -20,10 +20,12 @@ async function proxyRequest(req: NextRequest, { params }: { params: { path: stri
       cache: 'no-store',
     });
 
-    const responseBlob = await response.blob();
+    // Gunakan streaming (response.body) langsung, JANGAN di-buffer pakai .blob()!
+    // Ini sangat krusial untuk Server-Sent Events (SSE) / QR Code scanner
     const responseHeaders = new Headers(response.headers);
+    responseHeaders.delete('content-encoding'); // Biarkan Next.js yang mengatur kompresi
     
-    return new NextResponse(responseBlob, {
+    return new NextResponse(response.body, {
       status: response.status,
       headers: responseHeaders,
     });
