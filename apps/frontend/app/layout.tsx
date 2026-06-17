@@ -9,8 +9,8 @@ const kanit = Kanit({
 });
 
 export const metadata: Metadata = {
-  title: "WhatsApp Blast Enterprise",
-  description: "Avisena WhatsApp Blast Platform",
+  title: "Blast-Avisena Enterprise",
+  description: "Blast-Avisena Platform",
 };
 
 export default function RootLayout({

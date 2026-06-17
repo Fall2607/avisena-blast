@@ -20,7 +20,7 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-2">
         <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Dashboard</h1>
         <p className="text-muted-foreground text-lg">
-          Ringkasan performa dan statistik WhatsApp Blast Anda.
+          Ringkasan performa dan statistik Blast-Avisena Anda.
         </p>
       </div>
 

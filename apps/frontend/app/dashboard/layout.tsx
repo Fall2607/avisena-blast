@@ -58,17 +58,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <SidebarProvider>
-      <div className="relative flex min-h-screen w-full bg-background text-foreground overflow-hidden">
-        {/* Ambient Lights Background */}
-        <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-primary/20 blur-[120px] pointer-events-none animate-ambient-1" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[60vw] h-[60vw] rounded-full bg-accent/30 blur-[150px] pointer-events-none animate-ambient-2" />
+      <div className="flex min-h-screen w-full bg-background text-foreground">
 
-        <div className="flex w-full z-10 p-2 md:p-4 gap-4 h-screen max-h-screen">
-          <Sidebar className="rounded-2xl glass-panel border-white/10 shadow-none h-full shrink-0 flex flex-col overflow-hidden">
-            <SidebarHeader className="h-16 flex items-center px-6 border-b border-white/10">
-              <div className="flex items-center gap-2 font-bold text-xl text-primary drop-shadow-sm">
+        <div className="flex w-full z-10 h-screen max-h-screen">
+          <Sidebar className="border-r border-border bg-sidebar h-full shrink-0 flex flex-col overflow-hidden">
+            <SidebarHeader className="h-16 flex items-center px-6 border-b border-border">
+              <div className="flex items-center gap-2 font-bold text-xl text-primary">
                 <MessageSquare className="w-6 h-6" />
-                <span>WA Blast</span>
+                <span>Blast-Avisena</span>
               </div>
             </SidebarHeader>
             <SidebarContent className="flex-1 overflow-y-auto">
@@ -93,10 +90,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </SidebarGroupContent>
               </SidebarGroup>
             </SidebarContent>
-            <SidebarFooter className="p-4 border-t border-white/10">
+            <SidebarFooter className="p-4 border-t border-border">
               <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-3 px-2">
-                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold shadow-inner">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
                     {user?.name?.charAt(0).toUpperCase()}
                   </div>
                   <div className="flex flex-col">
@@ -106,7 +103,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </span>
                   </div>
                 </div>
-                <Button variant="outline" className="w-full justify-start text-destructive hover:text-destructive border-white/10 hover:bg-destructive/10 glass-panel" onClick={logout}>
+                <Button variant="outline" className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10" onClick={logout}>
                   <LogOut className="w-4 h-4 mr-2" />
                   Sign Out
                 </Button>
@@ -114,10 +111,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </SidebarFooter>
           </Sidebar>
 
-          <div className="flex-1 flex flex-col w-full overflow-hidden rounded-2xl glass-panel relative z-20">
-            <header className="h-16 border-b border-white/10 bg-white/5 dark:bg-black/5 backdrop-blur-md flex items-center px-6 z-10 sticky top-0">
+          <div className="flex-1 flex flex-col w-full overflow-hidden bg-background relative z-20">
+            <header className="h-16 border-b border-border bg-surface flex items-center px-6 z-10 sticky top-0">
                <div className="font-bold text-xl text-foreground flex items-center gap-3">
-                 <div className="w-1.5 h-5 bg-primary rounded-full shadow-[0_0_10px_rgba(79,70,229,0.5)]"></div>
+                 <div className="w-1.5 h-5 bg-primary rounded-[10px]"></div>
                  {navItems.find(i => i.url === pathname)?.title || 'Dashboard'}
                </div>
             </header>

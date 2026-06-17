@@ -42,7 +42,7 @@ export default function LoginPage() {
             <MessageSquare className="w-6 h-6 text-white" />
           </div>
           <CardTitle className="text-[24px] font-bold tracking-tight text-center text-foreground">
-            WhatsApp Blast
+            Blast-Avisena
           </CardTitle>
           <CardDescription className="text-center text-muted-foreground">
             Sign in to your enterprise portal
