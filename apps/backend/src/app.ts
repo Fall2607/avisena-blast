@@ -28,6 +28,7 @@ import contactRoutes from './routes/contact.routes';
 import contactGroupRoutes from './routes/contactGroup.routes';
 import templateRoutes from './routes/template.routes';
 import campaignRoutes from './routes/campaign.routes';
+import botRoutes from './routes/bot.routes';
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -36,6 +37,7 @@ app.use('/api/contacts', contactRoutes);
 app.use('/api/contact-groups', contactGroupRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/campaigns', campaignRoutes);
+app.use('/api/bot', botRoutes);
 
 // Error Handling Middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {

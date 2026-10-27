@@ -115,3 +115,18 @@ model MessageLog {
 
   @@map("message_logs")
 }
+
+model BotRule {
+  id           String   @id @default(uuid())
+  name         String
+  triggerType  String   @default("EXACT") @map("trigger_type") // EXACT, CONTAINS, FALLBACK
+  keywords     String   @db.Text                               // Comma-separated triggers: "1, menu, halo"
+  response     String   @db.Text
+  buttons      String?  @db.Text                               // JSON array of interactive buttons [{label, type, value}]
+  isActive     Boolean  @default(true) @map("is_active")
+  sessionId    String?  @map("session_id") // null = Semua Sesi (Global), atau nama sesi spesifik
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("bot_rules")
+}

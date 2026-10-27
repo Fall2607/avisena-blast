@@ -3,7 +3,9 @@ import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
   WASocket,
-  Browsers
+  Browsers,
+  proto,
+  generateWAMessageFromContent
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import * as QRCode from 'qrcode';
@@ -103,6 +105,374 @@ export const initSession = async (sessionId: string, phoneNumber?: string) => {
           phoneNumber: phoneNumber 
         }
       });
+    }
+  });
+
+// In-memory conversation state for multi-turn nested bot menus
+interface UserBotSession {
+  ruleId: string;
+  activeOptionId: string | null; // e.g. 'opt_1' when viewing sub-menu of option 1
+  lastActive: number;
+}
+
+const userBotSessions = new Map<string, UserBotSession>();
+
+// Handle incoming messages for WhatsApp Bot Auto-Reply
+const sendInteractiveOrTextMessage = async (
+  sock: WASocket,
+  sessionId: string,
+  remoteJid: string,
+  text: string,
+  title: string,
+  options: any[],
+  isSubMenu: boolean = false
+) => {
+  let finalText = text;
+
+  // Format list items or sub-options into a clean, numbered WhatsApp interactive menu
+  if (Array.isArray(options) && options.length > 0) {
+    if (options.length === 1 && (options[0].value === 'menu' || options[0].label.toLowerCase().includes('menu'))) {
+      if (!finalText.toLowerCase().includes('0') && !finalText.toLowerCase().includes('menu')) {
+        finalText = `${text}\n\n👉 *Ketik 0 atau MENU untuk kembali ke menu utama.*`;
+      }
+    } else {
+      const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+      // Check if message doesn't already contain numbered list
+      if (!finalText.includes('1️⃣') && !finalText.includes('1.')) {
+        const formattedItems = options.map((btn, idx) => {
+          const num = numberEmojis[idx] || `${idx + 1}.`;
+          const label = (btn.label || `Pilihan ${idx + 1}`).replace(/^\d+[\.\s\-]+/, '').trim();
+          const desc = btn.description ? `\n   _${btn.description}_` : '';
+          return `${num} *${label}*${desc}`;
+        }).join('\n\n');
+
+        const backGuide = isSubMenu
+          ? `0️⃣ *Kembali ke Menu Utama*\n\n👉 *Balas dengan angka (1-${options.length}) atau ketik 0 untuk kembali ke menu utama.*`
+          : `0️⃣ *Kembali ke Menu Utama*\n\n👉 *Balas dengan angka (1-${options.length}) atau ketik 0 untuk menu utama.*`;
+
+        finalText = `${text}\n\n${formattedItems}\n\n${backGuide}`;
+      }
+    }
+  } else {
+    // Single reply leaf message
+    if (!finalText.includes('0') && !finalText.toLowerCase().includes('menu')) {
+      finalText = `${text}\n\n👉 *Ketik 0 atau MENU untuk kembali ke menu utama.*`;
+    }
+  }
+
+  // Always send via standard WhatsApp message to guarantee 100% instant delivery on all WhatsApp clients (Android, iOS, Web)
+  logger.info(`[Bot ${sessionId}] Sending message to ${remoteJid}`);
+  await sock.sendMessage(remoteJid, { text: finalText });
+};
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
+
+    for (const msg of messages) {
+      // 1. Ignore outgoing messages sent by the bot/user
+      if (msg.key.fromMe) continue;
+
+      // 2. Ignore broadcast status updates
+      const remoteJid = msg.key.remoteJid;
+      if (!remoteJid || remoteJid === 'status@broadcast') continue;
+
+      // 3. Extract incoming text and clicked button details
+      let incomingText = (
+        msg.message?.conversation ||
+        msg.message?.extendedTextMessage?.text ||
+        msg.message?.imageMessage?.caption ||
+        ''
+      ).trim();
+
+      let clickedButtonId: string | null = null;
+      let clickedButtonLabel: string | null = null;
+
+      if (msg.message?.interactiveResponseMessage) {
+        const intResp = msg.message.interactiveResponseMessage;
+        if (intResp.nativeFlowResponseMessage?.paramsJson) {
+          try {
+            const parsed = JSON.parse(intResp.nativeFlowResponseMessage.paramsJson);
+            clickedButtonId = (parsed.id || '').trim();
+          } catch {}
+        }
+        if (intResp.body?.text) {
+          clickedButtonLabel = intResp.body.text.trim();
+        }
+      }
+
+      if (!clickedButtonId && msg.message?.buttonsResponseMessage?.selectedButtonId) {
+        clickedButtonId = msg.message.buttonsResponseMessage.selectedButtonId.trim();
+        clickedButtonLabel = msg.message.buttonsResponseMessage.selectedDisplayText || null;
+      } else if (!clickedButtonId && msg.message?.templateButtonReplyMessage?.selectedId) {
+        clickedButtonId = msg.message.templateButtonReplyMessage.selectedId.trim();
+        clickedButtonLabel = msg.message.templateButtonReplyMessage.selectedDisplayText || null;
+      } else if (!clickedButtonId && msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId) {
+        clickedButtonId = msg.message.listResponseMessage.singleSelectReply.selectedRowId.trim();
+        clickedButtonLabel = (msg.message.listResponseMessage as any)?.title || null;
+      }
+
+      const effectiveText = (clickedButtonId || incomingText || clickedButtonLabel || '').trim();
+      if (!effectiveText) continue;
+
+      try {
+        // 4. Fetch all active bot rules applicable to this session or all sessions
+        const rules = await prisma.botRule.findMany({
+          where: { 
+            isActive: true,
+            OR: [
+              { sessionId: null },
+              { sessionId: '' },
+              { sessionId: 'ALL' },
+              { sessionId: sessionId }
+            ]
+          },
+          orderBy: { createdAt: 'asc' }
+        });
+
+        if (rules.length === 0) continue;
+
+        // Sort: specific session rules take precedence over global rules
+        rules.sort((a, b) => {
+          if (a.sessionId === sessionId && b.sessionId !== sessionId) return -1;
+          if (a.sessionId !== sessionId && b.sessionId === sessionId) return 1;
+          return 0;
+        });
+
+        const sessionKey = `${sessionId}:${remoteJid}`;
+        const numInput = parseInt(effectiveText.trim(), 10);
+        const isReturnCommand = effectiveText.trim() === '0' || 
+          effectiveText.toLowerCase().trim() === 'menu' || 
+          effectiveText.toLowerCase().trim() === 'kembali';
+
+        // Clean up expired conversation state (older than 30 mins)
+        const currentSession = userBotSessions.get(sessionKey);
+        if (currentSession && (Date.now() - currentSession.lastActive > 30 * 60 * 1000)) {
+          userBotSessions.delete(sessionKey);
+        }
+        const activeUserSession = userBotSessions.get(sessionKey);
+
+        // 5. Case: User sends '0' or 'MENU' -> Return to Main Menu
+        if (isReturnCommand) {
+          logger.info(`[Bot ${sessionId}] Return to Main Menu requested by ${remoteJid}`);
+          const mainRule = (activeUserSession?.ruleId && rules.find(r => r.id === activeUserSession.ruleId)) ||
+            rules.find(r => r.keywords.toLowerCase().includes('menu') || r.keywords.toLowerCase().includes('halo')) ||
+            rules[0];
+
+          if (mainRule) {
+            userBotSessions.set(sessionKey, { ruleId: mainRule.id, activeOptionId: null, lastActive: Date.now() });
+            let parsedButtons: any[] = [];
+            if (mainRule.buttons) {
+              try {
+                parsedButtons = typeof mainRule.buttons === 'string' ? JSON.parse(mainRule.buttons) : mainRule.buttons;
+              } catch {}
+            }
+            await sendInteractiveOrTextMessage(
+              sock,
+              sessionId,
+              remoteJid,
+              mainRule.response,
+              mainRule.name,
+              parsedButtons,
+              false
+            );
+            continue;
+          }
+        }
+
+        // 6. Case: User is currently inside a Sub-Menu (Nested Options)
+        if (activeUserSession?.activeOptionId) {
+          const parentRule = rules.find(r => r.id === activeUserSession.ruleId);
+          if (parentRule && parentRule.buttons) {
+            try {
+              const btns = typeof parentRule.buttons === 'string' ? JSON.parse(parentRule.buttons) : parentRule.buttons;
+              const parentOption = Array.isArray(btns) && btns.find((b: any, idx: number) => 
+                b.id === activeUserSession.activeOptionId || `opt_${idx + 1}` === activeUserSession.activeOptionId
+              );
+
+              if (parentOption && Array.isArray(parentOption.subOptions) && parentOption.subOptions.length > 0) {
+                let matchedSub: any = null;
+
+                // Match by numeric index (1 to subOptions.length)
+                if (!isNaN(numInput) && numInput >= 1 && numInput <= parentOption.subOptions.length) {
+                  matchedSub = parentOption.subOptions[numInput - 1];
+                } else {
+                  // Match by label
+                  matchedSub = parentOption.subOptions.find((so: any) => 
+                    so.label.toLowerCase().includes(effectiveText.toLowerCase()) ||
+                    effectiveText.toLowerCase().includes(so.label.toLowerCase())
+                  );
+                }
+
+                if (matchedSub && matchedSub.replyMessage) {
+                  logger.info(`[Bot ${sessionId}] Sub-option "${matchedSub.label}" selected by ${remoteJid}`);
+                  activeUserSession.lastActive = Date.now();
+                  await sendInteractiveOrTextMessage(
+                    sock,
+                    sessionId,
+                    remoteJid,
+                    matchedSub.replyMessage.trim(),
+                    matchedSub.label,
+                    []
+                  );
+                  continue;
+                }
+              }
+            } catch (err) {
+              logger.warn(`[Bot ${sessionId}] Error processing sub-menu for ${remoteJid}: ${err}`);
+            }
+          }
+        }
+
+        // 7. Case: User sends a number or selects from Main Menu Options
+        let handledByOption = false;
+
+        for (const rule of rules) {
+          if (!rule.buttons) continue;
+          try {
+            const btns = typeof rule.buttons === 'string' ? JSON.parse(rule.buttons) : rule.buttons;
+            if (Array.isArray(btns)) {
+              for (let i = 0; i < btns.length; i++) {
+                const btn = btns[i];
+                const indexMatch = !isNaN(numInput) && numInput === (i + 1);
+                const idMatches = clickedButtonId && (
+                  btn.id === clickedButtonId || 
+                  `btn_${btn.id}` === clickedButtonId || 
+                  btn.value === clickedButtonId ||
+                  `btn_opt_${i + 1}` === clickedButtonId
+                );
+                const labelMatches = (clickedButtonLabel || incomingText) && btn.label && (
+                  btn.label.toLowerCase().trim() === (clickedButtonLabel || incomingText).toLowerCase().trim() ||
+                  btn.label.toLowerCase().includes(effectiveText.toLowerCase()) ||
+                  effectiveText.toLowerCase().includes(btn.label.toLowerCase())
+                );
+
+                if (indexMatch || idMatches || labelMatches) {
+                  // Check if this option has nested sub-options!
+                  if (Array.isArray(btn.subOptions) && btn.subOptions.length > 0) {
+                    logger.info(`[Bot ${sessionId}] Option "${btn.label}" has ${btn.subOptions.length} nested sub-options -> entering sub-menu`);
+                    userBotSessions.set(sessionKey, { 
+                      ruleId: rule.id, 
+                      activeOptionId: btn.id || `opt_${i + 1}`, 
+                      lastActive: Date.now() 
+                    });
+
+                    const subMenuPrompt = btn.replyMessage?.trim() || `Silakan pilih informasi untuk *${btn.label}*:`;
+                    await sendInteractiveOrTextMessage(
+                      sock,
+                      sessionId,
+                      remoteJid,
+                      subMenuPrompt,
+                      btn.label,
+                      btn.subOptions,
+                      true // isSubMenu
+                    );
+                    handledByOption = true;
+                    break;
+                  }
+
+                  // Standard direct reply option
+                  if (btn.replyMessage && btn.replyMessage.trim()) {
+                    logger.info(`[Bot ${sessionId}] Option "${btn.label}" selected (idx: ${i + 1}) -> sending direct reply response`);
+                    userBotSessions.set(sessionKey, { 
+                      ruleId: rule.id, 
+                      activeOptionId: null, 
+                      lastActive: Date.now() 
+                    });
+
+                    await sendInteractiveOrTextMessage(
+                      sock,
+                      sessionId,
+                      remoteJid,
+                      btn.replyMessage.trim(),
+                      btn.label || 'Informasi Layanan',
+                      []
+                    );
+                    handledByOption = true;
+                    break;
+                  }
+                }
+              }
+            }
+          } catch {}
+          if (handledByOption) break;
+        }
+
+        if (handledByOption) continue;
+
+        // 8. Otherwise match normal rules by keyword
+        let matchedRule: any = null;
+        let fallbackRule: any = null;
+        const searchKeywords = [
+          effectiveText.toLowerCase(),
+          (clickedButtonLabel || '').toLowerCase(),
+          incomingText.toLowerCase()
+        ].filter(Boolean);
+
+        for (const rule of rules) {
+          if (rule.triggerType === 'FALLBACK') {
+            if (!fallbackRule) {
+              fallbackRule = rule;
+            }
+            continue;
+          }
+
+          const keywords = rule.keywords
+            .split(',')
+            .map((k) => k.trim().toLowerCase())
+            .filter(Boolean);
+
+          if (rule.triggerType === 'EXACT') {
+            if (searchKeywords.some((sk) => keywords.includes(sk))) {
+              matchedRule = rule;
+              break;
+            }
+          } else if (rule.triggerType === 'CONTAINS') {
+            if (searchKeywords.some((sk) => keywords.some((k) => sk.includes(k) || k.includes(sk)))) {
+              matchedRule = rule;
+              break;
+            }
+          }
+        }
+
+        // 9. Use fallback if no specific keyword matched
+        if (!matchedRule && fallbackRule) {
+          matchedRule = fallbackRule;
+        }
+
+        // 10. Send auto-reply message for matched rule
+        if (matchedRule) {
+          logger.info(`[Bot ${sessionId}] Replying to ${remoteJid} for message: "${effectiveText}" with rule "${matchedRule.name}"`);
+          userBotSessions.set(sessionKey, { 
+            ruleId: matchedRule.id, 
+            activeOptionId: null, 
+            lastActive: Date.now() 
+          });
+
+          let parsedButtons: any[] = [];
+          if (matchedRule.buttons) {
+            try {
+              parsedButtons = typeof matchedRule.buttons === 'string' 
+                ? JSON.parse(matchedRule.buttons) 
+                : matchedRule.buttons;
+            } catch (err) {
+              logger.warn(`[Bot ${sessionId}] Failed to parse buttons for rule ${matchedRule.id}: ${err}`);
+            }
+          }
+
+          await sendInteractiveOrTextMessage(
+            sock,
+            sessionId,
+            remoteJid,
+            matchedRule.response,
+            matchedRule.name,
+            parsedButtons,
+            false
+          );
+        }
+      } catch (botErr) {
+        logger.error(botErr, `[Bot ${sessionId}] Error processing auto-reply for ${remoteJid}`);
+      }
     }
   });
 

@@ -25,13 +25,15 @@ import {
   Smartphone,
   History,
   ShieldCheck,
-  ChevronRight
+  ChevronRight,
+  Bot
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "WhatsApp Session", url: "/dashboard/session", icon: Smartphone },
+  { title: "WhatsApp Bot", url: "/dashboard/bot", icon: Bot },
   { title: "Kontak & Grup", url: "/dashboard/contacts", icon: Users },
   { title: "Kirim Blast", url: "/dashboard/blast", icon: Send },
   { title: "Riwayat Kampanye", url: "/dashboard/campaigns", icon: History },
