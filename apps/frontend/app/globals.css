@@ -46,65 +46,71 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Avisena Custom Brand Tokens */
+  --color-avisena-teal: #00A389;
+  --color-avisena-teal-hover: #008771;
+  --color-avisena-navy: #10448E;
+  --color-avisena-orange: #F28E2B;
 }
 
 :root {
-  --background: #F8FAFC; /* Clean base for light mode */
-  --foreground: #0f172a;
-  --card: #FFFFFF; /* Solid white surface */
-  --card-foreground: #0f172a;
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  --card: #FFFFFF;
+  --card-foreground: #0F172A;
   --popover: #FFFFFF;
-  --popover-foreground: #0f172a;
-  --primary: #2563EB; /* Linear/Vercel Blue */
-  --primary-foreground: #ffffff;
-  --secondary: #F1F5F9;
-  --secondary-foreground: #0f172a;
+  --popover-foreground: #0F172A;
+  --primary: #00A389; /* Avisena Signature Emerald Teal */
+  --primary-foreground: #FFFFFF;
+  --secondary: #EBF8F5; /* Soft Avisena Mint Tint */
+  --secondary-foreground: #006D5B;
   --muted: #F1F5F9;
-  --muted-foreground: #64748b;
-  --accent: #F1F5F9;
-  --accent-foreground: #0f172a;
-  --destructive: #DC2626;
-  --border: #E5E7EB; /* Crisp borders */
-  --input: #E5E7EB;
-  --ring: #2563EB;
-  --radius: 10px; /* Base radius mapped to buttons/inputs */
-  --sidebar: #F8FAFC;
+  --muted-foreground: #64748B;
+  --accent: #10448E; /* Avisena Corporate Navy Blue */
+  --accent-foreground: #FFFFFF;
+  --destructive: #EF4444;
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #00A389;
+  --radius: 10px;
+  --sidebar: #FFFFFF;
   --sidebar-foreground: #334155;
-  --sidebar-primary: #2563EB;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #F1F5F9;
-  --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #E5E7EB;
-  --sidebar-ring: #2563EB;
+  --sidebar-primary: #00A389;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #EBF8F5;
+  --sidebar-accent-foreground: #006D5B;
+  --sidebar-border: #E2E8F0;
+  --sidebar-ring: #00A389;
 }
 
 .dark {
-  --background: #020617; /* Deepest dark base */
-  --foreground: #f8fafc;
-  --card: #0F172A; /* Solid dark surface */
-  --card-foreground: #f8fafc;
-  --popover: #0F172A;
-  --popover-foreground: #f8fafc;
-  --primary: #3B82F6;
-  --primary-foreground: #ffffff;
-  --secondary: #1E293B;
-  --secondary-foreground: #f8fafc;
-  --muted: #1E293B;
-  --muted-foreground: #94a3b8;
-  --accent: #1E293B;
-  --accent-foreground: #f8fafc;
+  --background: #090E17;
+  --foreground: #F8FAFC;
+  --card: #101726;
+  --card-foreground: #F8FAFC;
+  --popover: #101726;
+  --popover-foreground: #F8FAFC;
+  --primary: #00BFA0;
+  --primary-foreground: #090E17;
+  --secondary: #162438;
+  --secondary-foreground: #5EEAD4;
+  --muted: #162438;
+  --muted-foreground: #94A3B8;
+  --accent: #2563EB;
+  --accent-foreground: #FFFFFF;
   --destructive: #EF4444;
-  --border: rgba(255, 255, 255, 0.1);
-  --input: rgba(255, 255, 255, 0.1);
-  --ring: #3B82F6;
-  --sidebar: #020617;
-  --sidebar-foreground: #cbd5e1;
-  --sidebar-primary: #3B82F6;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(255, 255, 255, 0.05);
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: #3B82F6;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: #00BFA0;
+  --sidebar: #090E17;
+  --sidebar-foreground: #CBD5E1;
+  --sidebar-primary: #00BFA0;
+  --sidebar-primary-foreground: #090E17;
+  --sidebar-accent: rgba(0, 191, 160, 0.1);
+  --sidebar-accent-foreground: #00BFA0;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #00BFA0;
 }
 
 @layer base {
@@ -117,8 +123,4 @@
   html {
     @apply font-sans;
   }
-}
-
-@layer utilities {
-  /* No more generic glass-panel or glass-card to enforce strict Design System */
 }
