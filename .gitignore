@@ -4,5 +4,6 @@ dist
 sessions
 .env
 .env.local
+.env.example
 .DS_Store
 *.log

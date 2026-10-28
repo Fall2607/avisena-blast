@@ -142,30 +142,30 @@ export default function BotPage() {
   const formatBotMessage = (text: string, btns: any[], isSubMenu: boolean = false) => {
     if (!btns || btns.length === 0) {
       if (!text.includes('0') && !text.toLowerCase().includes('menu')) {
-        return `${text}\n\n👉 *Ketik 0 atau MENU untuk kembali ke menu utama.*`;
+        return `${text}\n\n*Ketik 0 atau MENU untuk kembali ke menu utama.*`;
       }
       return text;
     }
     
     if (btns.length === 1 && (btns[0].value === 'menu' || btns[0].value === '0' || btns[0].label.toLowerCase().includes('menu'))) {
       if (!text.toLowerCase().includes('0') && !text.toLowerCase().includes('menu')) {
-        return `${text}\n\n👉 *Ketik 0 atau MENU untuk kembali ke menu utama.*`;
+        return `${text}\n\n*Ketik 0 atau MENU untuk kembali ke menu utama.*`;
       }
       return text;
     }
 
-    const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+    // Standard numbering without emojis
     if (!text.includes('1️⃣') && !text.includes('1.')) {
       const formattedItems = btns.map((btn, idx) => {
-        const num = numberEmojis[idx] || `${idx + 1}.`;
+        const num = `${idx + 1}.`;
         const label = (btn.label || `Pilihan ${idx + 1}`).replace(/^\d+[\.\s\-]+/, '').trim();
         const desc = btn.description ? `\n   _${btn.description}_` : '';
         return `${num} *${label}*${desc}`;
       }).join('\n\n');
 
       const backGuide = isSubMenu
-        ? `0️⃣ *Kembali ke Menu Utama*\n\n👉 *Balas dengan angka (1-${btns.length}) atau ketik 0 untuk kembali ke menu utama.*`
-        : `0️⃣ *Kembali ke Menu Utama*\n\n👉 *Balas dengan angka (1-${btns.length}) atau ketik 0 untuk menu utama.*`;
+        ? `0. *Kembali ke Menu Utama*\n\n*Balas dengan angka (1-${btns.length}) atau ketik 0 untuk kembali ke menu utama.*`
+        : `0. *Kembali ke Menu Utama*\n\n*Balas dengan angka (1-${btns.length}) atau ketik 0 untuk menu utama.*`;
 
       return `${text}\n\n${formattedItems}\n\n${backGuide}`;
     }
@@ -318,7 +318,7 @@ export default function BotPage() {
         description: "Pilihan jadwal spesialis anak, penyakit dalam, obgyn, dll.",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `📋 *Jadwal Praktik Dokter RS Avisena:*\nSilakan pilih poliklinik spesialis yang ingin Anda tanyakan:`,
+        replyMessage: `*Jadwal Praktik Dokter RS Avisena:*\nSilakan pilih poliklinik spesialis yang ingin Anda tanyakan:`,
         includeBackToMenu: true,
         value: "1",
         hasSubMenu: true,
@@ -327,25 +327,25 @@ export default function BotPage() {
             id: "sub_1",
             label: "Poli Anak & Tumbuh Kembang",
             description: "dr. Ahmad, Sp.A & dr. Dian, Sp.A",
-            replyMessage: `👶 *Jadwal Praktik Poli Anak RS Avisena:*\n\n• dr. Ahmad, Sp.A: Senin - Jumat (08.00 - 12.00 WIB)\n• dr. Dian, Sp.A: Selasa, Kamis, Sabtu (13.00 - 16.00 WIB)\n\nLokasi: Poliklinik Lantai 2, Gedung Rawat Jalan.`
+            replyMessage: `*Jadwal Praktik Poli Anak RS Avisena:*\n\n• dr. Ahmad, Sp.A: Senin - Jumat (08.00 - 12.00 WIB)\n• dr. Dian, Sp.A: Selasa, Kamis, Sabtu (13.00 - 16.00 WIB)\n\nLokasi: Poliklinik Lantai 2, Gedung Rawat Jalan.`
           },
           {
             id: "sub_2",
             label: "Poli Penyakit Dalam (Internis)",
             description: "dr. Siti, Sp.PD & dr. Hendra, Sp.PD",
-            replyMessage: `🩺 *Jadwal Praktik Poli Penyakit Dalam:*\n\n• dr. Siti, Sp.PD: Senin - Sabtu (09.00 - 14.00 WIB)\n• dr. Hendra, Sp.PD: Senin, Rabu, Jumat (16.00 - 19.00 WIB)\n\nLokasi: Poliklinik Lantai 1, Gedung Utama.`
+            replyMessage: `*Jadwal Praktik Poli Penyakit Dalam:*\n\n• dr. Siti, Sp.PD: Senin - Sabtu (09.00 - 14.00 WIB)\n• dr. Hendra, Sp.PD: Senin, Rabu, Jumat (16.00 - 19.00 WIB)\n\nLokasi: Poliklinik Lantai 1, Gedung Utama.`
           },
           {
             id: "sub_3",
             label: "Poli Kandungan & Kebidanan (Obgyn)",
             description: "dr. Maya, Sp.OG (USG 4D)",
-            replyMessage: `🤰 *Jadwal Praktik Poli Kandungan (Obgyn):*\n\n• dr. Maya, Sp.OG: Senin - Kamis (10.00 - 15.00 WIB)\n• dr. Reza, Sp.OG: Jumat & Sabtu (09.00 - 13.00 WIB)\n\nLayanan: Pemeriksaan Kehamilan, USG 4D, & Konsultasi Fertilitas.`
+            replyMessage: `*Jadwal Praktik Poli Kandungan (Obgyn):*\n\n• dr. Maya, Sp.OG: Senin - Kamis (10.00 - 15.00 WIB)\n• dr. Reza, Sp.OG: Jumat & Sabtu (09.00 - 13.00 WIB)\n\nLayanan: Pemeriksaan Kehamilan, USG 4D, & Konsultasi Fertilitas.`
           },
           {
             id: "sub_4",
             label: "Poli Gigi & Bedah Mulut",
             description: "drg. Budi & drg. Rina, Sp.BM",
-            replyMessage: `🦷 *Jadwal Praktik Poli Gigi & Bedah Mulut:*\n\n• drg. Budi: Senin - Jumat (13.00 - 17.00 WIB)\n• drg. Rina, Sp.BM: Selasa & Kamis (17.00 - 20.00 WIB)\n\nLayanan: Tambal Gigi, Scaling, Cabut Gigi Bungsu, & Ortodonti.`
+            replyMessage: `*Jadwal Praktik Poli Gigi & Bedah Mulut:*\n\n• drg. Budi: Senin - Jumat (13.00 - 17.00 WIB)\n• drg. Rina, Sp.BM: Selasa & Kamis (17.00 - 20.00 WIB)\n\nLayanan: Tambal Gigi, Scaling, Cabut Gigi Bungsu, & Ortodonti.`
           }
         ]
       },
@@ -355,7 +355,7 @@ export default function BotPage() {
         description: "Panduan ambil nomor antrean poli & cek kuota dokter",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `📝 *Pendaftaran & Antrean Klinik Avisena:*\n\n1. Pendaftaran online dibuka H-1 pemeriksaan melalui portal website resmi kami.\n2. Siapkan nomor RM (Rekam Medis) atau NIK KTP Anda.\n3. Kuota poliklinik dibuka setiap hari pukul 06.00 WIB.\n4. Simpan nomor barcode antrean digital Anda untuk konfirmasi di mesin check-in RS.`,
+        replyMessage: `*Pendaftaran & Antrean Klinik Avisena:*\n\n1. Pendaftaran online dibuka H-1 pemeriksaan melalui portal website resmi kami.\n2. Siapkan nomor RM (Rekam Medis) atau NIK KTP Anda.\n3. Kuota poliklinik dibuka setiap hari pukul 06.00 WIB.\n4. Simpan nomor barcode antrean digital Anda untuk konfirmasi di mesin check-in RS.`,
         includeBackToMenu: true,
         value: "2"
       },
@@ -365,7 +365,7 @@ export default function BotPage() {
         description: "Informasi Bed Monitoring, kapasitas kelas & tarif",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `🛏️ *Monitoring Kamar Rawat Inap RS Avisena (Update Hari Ini):*\n\n• VVIP: 2 Bed Tersedia (Rp 1.200.000/hari)\n• VIP: 5 Bed Tersedia (Rp 850.000/hari)\n• Kelas 1: 8 Bed Tersedia (Rp 500.000/hari)\n• Kelas 2: 12 Bed Tersedia (Rp 350.000/hari)\n• Kelas 3: 15 Bed Tersedia (Tercover BPJS Kesehatan)\n• ICU / NICU: 3 Bed Siap Pakai`,
+        replyMessage: `*Monitoring Kamar Rawat Inap RS Avisena (Update Hari Ini):*\n\n• VVIP: 2 Bed Tersedia (Rp 1.200.000/hari)\n• VIP: 5 Bed Tersedia (Rp 850.000/hari)\n• Kelas 1: 8 Bed Tersedia (Rp 500.000/hari)\n• Kelas 2: 12 Bed Tersedia (Rp 350.000/hari)\n• Kelas 3: 15 Bed Tersedia (Tercover BPJS Kesehatan)\n• ICU / NICU: 3 Bed Siap Pakai`,
         includeBackToMenu: true,
         value: "3"
       },
@@ -375,7 +375,7 @@ export default function BotPage() {
         description: "Aturan, tata tertib & jadwal kunjungan rawat inap",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `⏰ *Jadwal & Tata Tertib Jam Besuk Pasien:*\n\n• Siang: 11.00 - 13.00 WIB\n• Sore: 17.00 - 19.00 WIB\n\n*Tata Tertib Kunjungan:*\n- Maksimal 2 orang pengunjung secara bergantian.\n- Anak di bawah usia 12 tahun tidak diperkenankan masuk ke area ruang perawatan demi keselamatan kesehatan.`,
+        replyMessage: `*Jadwal & Tata Tertib Jam Besuk Pasien:*\n\n• Siang: 11.00 - 13.00 WIB\n• Sore: 17.00 - 19.00 WIB\n\n*Tata Tertib Kunjungan:*\n- Maksimal 2 orang pengunjung secara bergantian.\n- Anak di bawah usia 12 tahun tidak diperkenankan masuk ke area ruang perawatan demi keselamatan kesehatan.`,
         includeBackToMenu: true,
         value: "4"
       },
@@ -385,7 +385,7 @@ export default function BotPage() {
         description: "Alur rujukan, syarat berkas BPJS & asuransi rekanan",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `💳 *Informasi BPJS Kesehatan & Asuransi Rekanan:*\n\n*Syarat Berkas Pasien BPJS:*\n1. Surat Rujukan Faskes 1 (Puskesmas/Klinik) yang masih aktif.\n2. Kartu BPJS & KTP asli.\n3. Kartu Berobat RS Avisena.\n\n*Asuransi Rekanan AdMedika:* Prudential, Allianz, Manulife, Sinarmas, Astra Life, Mandiri Inhealth, dll.`,
+        replyMessage: `*Informasi BPJS Kesehatan & Asuransi Rekanan:*\n\n*Syarat Berkas Pasien BPJS:*\n1. Surat Rujukan Faskes 1 (Puskesmas/Klinik) yang masih aktif.\n2. Kartu BPJS & KTP asli.\n3. Kartu Berobat RS Avisena.\n\n*Asuransi Rekanan AdMedika:* Prudential, Allianz, Manulife, Sinarmas, Astra Life, Mandiri Inhealth, dll.`,
         includeBackToMenu: true,
         value: "5"
       },
@@ -395,7 +395,7 @@ export default function BotPage() {
         description: "Operasional IGD 24 Jam, Lab, Radiologi, Apotek, MCU",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `🏥 *Fasilitas & Layanan Medis RS Avisena:*\n\n• IGD 24 Jam & Ruang Tindakan Gawat Darurat\n• Laboratorium Patologi Klinik 24 Jam\n• Radiologi Digital (CT Scan, USG 4D, X-Ray)\n• Farmasi & Apotek Siaga 24 Jam\n• Medical Check Up (MCU) Personal & Korporat\n• Ruang Fisioterapi & Rehabilitasi Medik`,
+        replyMessage: `*Fasilitas & Layanan Medis RS Avisena:*\n\n• IGD 24 Jam & Ruang Tindakan Gawat Darurat\n• Laboratorium Patologi Klinik 24 Jam\n• Radiologi Digital (CT Scan, USG 4D, X-Ray)\n• Farmasi & Apotek Siaga 24 Jam\n• Medical Check Up (MCU) Personal & Korporat\n• Ruang Fisioterapi & Rehabilitasi Medik`,
         includeBackToMenu: true,
         value: "6"
       },
@@ -405,7 +405,7 @@ export default function BotPage() {
         description: "Tautan Google Maps, nomor ambulans & kontak darurat",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `📍 *Lokasi & Kontak Darurat Avisena:*\n\n• Alamat: Jl. Raya Avisena No. 100\n• IGD Call Center: 021-555-1199\n• Ambulans Siaga 24 Jam: 0811-999-118\n• Website: https://avisena.co.id\n• Google Maps: https://maps.google.com/?q=RS+Avisena`,
+        replyMessage: `*Lokasi & Kontak Darurat Avisena:*\n\n• Alamat: Jl. Raya Avisena No. 100\n• IGD Call Center: 021-555-1199\n• Ambulans Siaga 24 Jam: 0811-999-118\n• Website: https://avisena.co.id\n• Google Maps: https://maps.google.com/?q=RS+Avisena`,
         includeBackToMenu: true,
         value: "7"
       },
@@ -415,7 +415,7 @@ export default function BotPage() {
         description: "Sambungkan chat dengan staf Customer Care / Helpdesk",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `👩‍💼 *Customer Care Avisena Healthcare:*\n\nPesan Anda telah diteruskan ke tim Customer Care kami. Mohon tunggu beberapa saat, petugas kami akan segera membalas chat Anda secara langsung. (Jam operasional operator: 08.00 - 20.00 WIB).`,
+        replyMessage: `*Customer Care Avisena Healthcare:*\n\nPesan Anda telah diteruskan ke tim Customer Care kami. Mohon tunggu beberapa saat, petugas kami akan segera membalas chat Anda secara langsung. (Jam operasional operator: 08.00 - 20.00 WIB).`,
         includeBackToMenu: true,
         value: "8"
       }
@@ -424,10 +424,10 @@ export default function BotPage() {
     setMenuFormat("LIST");
     setButtonsList(presetItems);
     if (!name) setName("Menu Layanan Rumah Sakit");
-    if (!response) setResponse("Halo! Selamat datang di Layanan Informasi Resmi *Avisena Healthcare Group* 🏥\n\nSilakan pilih layanan yang Anda butuhkan melalui daftar menu di bawah:");
+    if (!response) setResponse("Halo! Selamat datang di Layanan Informasi Resmi *Avisena Healthcare Group* \n\nSilakan pilih layanan yang Anda butuhkan melalui daftar menu di bawah:");
     resetChatSimulation(
       "halo",
-      "Halo! Selamat datang di Layanan Informasi Resmi *Avisena Healthcare Group* 🏥\n\nSilakan pilih layanan yang Anda butuhkan melalui daftar menu di bawah:",
+      "Halo! Selamat datang di Layanan Informasi Resmi *Avisena Healthcare Group* \n\nSilakan pilih layanan yang Anda butuhkan melalui daftar menu di bawah:",
       presetItems
     );
   };
@@ -580,7 +580,7 @@ export default function BotPage() {
     if (btn.replyMessage?.trim()) {
       let replyWithMenu = btn.replyMessage.trim();
       if (!replyWithMenu.includes('0') && !replyWithMenu.toLowerCase().includes('menu')) {
-        replyWithMenu = `${replyWithMenu}\n\n👉 *Ketik 0 atau MENU untuk kembali ke menu utama.*`;
+        replyWithMenu = `${replyWithMenu}\n\n*Ketik 0 atau MENU untuk kembali ke menu utama.*`;
       }
       const returnBtn: BotButton[] = [
         {
@@ -837,10 +837,10 @@ export default function BotPage() {
               className="h-9 px-3 rounded-lg text-xs font-semibold border border-border bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="ALL">Semua Target Sesi</option>
-              <option value="GLOBAL">🌐 Global (Semua Sesi)</option>
+              <option value="GLOBAL">Global (Semua Sesi)</option>
               {sessions.map((s) => (
                 <option key={s.id} value={s.sessionName}>
-                  📱 Sesi: {s.sessionName} {s.phoneNumber ? `(${s.phoneNumber})` : ''}
+                  Sesi: {s.sessionName} {s.phoneNumber ? `(${s.phoneNumber})` : ''}
                 </option>
               ))}
             </select>
@@ -1096,10 +1096,10 @@ export default function BotPage() {
                     onChange={(e) => setSelectedSessionId(e.target.value)}
                     className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm font-sans focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
                   >
-                    <option value="ALL">🌐 Semua Sesi (Global - Berlaku untuk Semua Nomor WA)</option>
+                    <option value="ALL">Semua Sesi (Global - Berlaku untuk Semua Nomor WA)</option>
                     {sessions.map((s) => (
                       <option key={s.id} value={s.sessionName}>
-                        📱 Sesi: {s.sessionName} {s.phoneNumber ? `(${s.phoneNumber})` : '(Belum tertaut nomor)'} • {s.status === 'CONNECTED' ? '🟢 Terhubung' : '🔴 Terputus'}
+                        Sesi: {s.sessionName} {s.phoneNumber ? `(${s.phoneNumber})` : '(Belum tertaut nomor)'} • {s.status === 'CONNECTED' ? 'Terhubung' : 'Terputus'}
                       </option>
                     ))}
                   </select>
@@ -1229,13 +1229,6 @@ export default function BotPage() {
                       >
                         _I_
                       </button>
-                      <button 
-                        type="button" 
-                        onClick={() => insertQuickText(" 🏥 ")} 
-                        className="px-1.5 py-0.5 bg-muted hover:bg-muted/80 rounded text-muted-foreground"
-                      >
-                        🏥
-                      </button>
                     </div>
                   </div>
                   <textarea 
@@ -1293,7 +1286,7 @@ export default function BotPage() {
                       onClick={handleLoadHospital8MenuPreset}
                       className="bg-[#00A389] hover:bg-[#008771] text-white text-[11px] h-7 px-2.5 font-medium shadow-xs"
                     >
-                      ✨ Muat 8 Menu RS
+                      Muat 8 Menu RS
                     </Button>
                   </div>
 
@@ -1370,7 +1363,7 @@ export default function BotPage() {
                                     !btn.hasSubMenu ? "bg-[#00A389] text-white shadow-2xs" : "text-muted-foreground hover:text-foreground"
                                   )}
                                 >
-                                  📄 Jawaban Langsung
+                                  Jawaban Langsung
                                 </button>
                                 <button
                                   type="button"
@@ -1378,8 +1371,8 @@ export default function BotPage() {
                                     handleUpdateButton(idx, "hasSubMenu", true);
                                     if (!btn.subOptions || btn.subOptions.length === 0) {
                                       handleUpdateButton(idx, "subOptions", [
-                                        { id: "sub_1", label: "Poli Anak", description: "dr. Ahmad, Sp.A", replyMessage: "👶 Jadwal Poli Anak: Senin - Jumat (08.00 - 12.00 WIB)" },
-                                        { id: "sub_2", label: "Poli Penyakit Dalam", description: "dr. Siti, Sp.PD", replyMessage: "🩺 Jadwal Poli Penyakit Dalam: Senin - Sabtu (09.00 - 14.00 WIB)" }
+                                        { id: "sub_1", label: "Poli Anak", description: "dr. Ahmad, Sp.A", replyMessage: "Jadwal Poli Anak: Senin - Jumat (08.00 - 12.00 WIB)" },
+                                        { id: "sub_2", label: "Poli Penyakit Dalam", description: "dr. Siti, Sp.PD", replyMessage: "Jadwal Poli Penyakit Dalam: Senin - Sabtu (09.00 - 14.00 WIB)" }
                                       ]);
                                     }
                                   }}
@@ -1389,7 +1382,7 @@ export default function BotPage() {
                                   )}
                                 >
                                   <Layers className="w-3 h-3" />
-                                  🗂️ Sub-Menu Bersarang
+                                  Sub-Menu Bersarang
                                 </button>
                               </div>
                             </div>
@@ -1529,7 +1522,7 @@ export default function BotPage() {
 
                                 <textarea
                                   rows={3}
-                                  placeholder={`Tulis isi informasi detail untuk pilihan "${btn.label || 'ini'}"...\nContoh:\n📋 *Jadwal Praktik Dokter Avisena:*\n• Poli Anak: 08.00 - 12.00 WIB\n• Poli Gigi: 13.00 - 17.00 WIB`}
+                                  placeholder={`Tulis isi informasi detail untuk pilihan "${btn.label || 'ini'}"...\nContoh:\n*Jadwal Praktik Dokter Avisena:*\n• Poli Anak: 08.00 - 12.00 WIB\n• Poli Gigi: 13.00 - 17.00 WIB`}
                                   value={btn.replyMessage}
                                   onChange={(e) => handleUpdateButton(idx, "replyMessage", e.target.value)}
                                   className="w-full p-2.5 rounded-lg border border-border bg-background text-xs font-sans focus:outline-none focus:ring-1 focus:ring-primary/60 resize-none leading-relaxed"
@@ -1543,7 +1536,7 @@ export default function BotPage() {
                                       onChange={(e) => handleUpdateButton(idx, "includeBackToMenu", e.target.checked)}
                                       className="w-3.5 h-3.5 rounded text-[#00A389] focus:ring-[#00A389]"
                                     />
-                                    <span>Sertakan panduan <b>"👉 Ketik 0 atau MENU untuk kembali ke menu utama"</b> di bawah pesan balasan ini</span>
+                                    <span>Sertakan panduan <b>"Ketik 0 atau MENU untuk kembali ke menu utama"</b> di bawah pesan balasan ini</span>
                                   </label>
                                 </div>
                               </div>
@@ -1677,7 +1670,7 @@ export default function BotPage() {
                         {msg.sender === "bot" && msg.buttons && msg.buttons.length > 0 && (
                           <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 space-y-1.5 mt-2">
                             <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold">
-                              <span>⚡ Uji Pilihan Pasien:</span>
+                              <span>Uji Pilihan Pasien:</span>
                               <span className="text-[9px] text-[#00A389]">Klik opsi atau ketik angka</span>
                             </div>
                             <div className="flex flex-wrap gap-1.5">
@@ -1689,7 +1682,7 @@ export default function BotPage() {
                                   className="text-left py-1 px-2 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900 text-[#006D5B] dark:text-teal-300 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all shadow-2xs active:scale-[0.98] border border-teal-200/80 dark:border-teal-800 cursor-pointer"
                                 >
                                   {btn.value === 'menu' ? (
-                                    <span>🔙 Ketik 'MENU'</span>
+                                    <span>Ketik 'MENU'</span>
                                   ) : (
                                     <>
                                       <span className="w-4 h-4 rounded-full bg-[#00A389] text-white text-[10px] flex items-center justify-center font-bold">
@@ -1708,7 +1701,7 @@ export default function BotPage() {
                   ))}
 
                   <p className="text-[10px] text-center text-muted-foreground italic pt-1">
-                    👆 <b>Uji Coba:</b> Klik pilihan di atas atau ketik angka 1-{buttonsList.length || 8} di kolom bawah!
+                    <b>Uji Coba:</b> Klik pilihan di atas atau ketik angka 1-{buttonsList.length || 8} di kolom bawah!
                   </p>
 
                 </div>
