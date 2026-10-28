@@ -103,7 +103,9 @@ export default function BotPage() {
   const [keywords, setKeywords] = useState("");
   const [response, setResponse] = useState("");
   const [buttonsList, setButtonsList] = useState<BotButton[]>([]);
-  const [menuFormat, setMenuFormat] = useState<"BUTTONS" | "LIST">("LIST");
+  const [menuType, setMenuType] = useState<"TEXT_NUMBER" | "WA_LIST">("TEXT_NUMBER");
+  const [listButtonText, setListButtonText] = useState("Silahkan Pilih :");
+  const [sectionTitle, setSectionTitle] = useState("Pilihan Menu Layanan");
   const [isActive, setIsActive] = useState(true);
   const [selectedSessionId, setSelectedSessionId] = useState("ALL");
   const [submitting, setSubmitting] = useState(false);
@@ -176,12 +178,16 @@ export default function BotPage() {
   const resetChatSimulation = (
     initPatientText?: string, 
     initResponseText?: string, 
-    initButtons?: BotButton[]
+    initButtons?: BotButton[],
+    customMenuType?: "TEXT_NUMBER" | "WA_LIST"
   ) => {
+    const activeMenuType = customMenuType !== undefined ? customMenuType : menuType;
     const patientText = initPatientText !== undefined ? initPatientText : (keywords.split(',')[0]?.trim() || "halo");
     const botText = initResponseText !== undefined ? initResponseText : (response || "Halo! Ada yang bisa kami bantu?");
     const activeButtons = initButtons !== undefined ? initButtons : buttonsList.filter(b => b.label.trim());
-    const formattedBotText = formatBotMessage(botText, activeButtons, false);
+    const formattedBotText = activeMenuType === "WA_LIST" 
+      ? botText 
+      : formatBotMessage(botText, activeButtons, false);
 
     setIsListSheetOpen(false);
     setSimulatedChatHistory([
@@ -196,7 +202,7 @@ export default function BotPage() {
         sender: "bot",
         text: formattedBotText,
         buttons: activeButtons,
-        isListMenu: false,
+        isListMenu: activeMenuType === "WA_LIST",
         time: "10:45"
       }
     ]);
@@ -209,11 +215,13 @@ export default function BotPage() {
     setKeywords("");
     setResponse("");
     setButtonsList([]);
-    setMenuFormat("LIST");
+    setMenuType("TEXT_NUMBER");
+    setListButtonText("Silahkan Pilih :");
+    setSectionTitle("Pilihan Menu Layanan");
     setIsActive(true);
     setSelectedSessionId("ALL");
     setTestInput("");
-    resetChatSimulation("halo", "(Ketik pesan pembuka bot di form sebelah kiri...)", []);
+    resetChatSimulation("halo", "(Ketik pesan pembuka bot di form sebelah kiri...)", [], "TEXT_NUMBER");
     setIsModalOpen(true);
   };
 
@@ -227,13 +235,30 @@ export default function BotPage() {
     setSelectedSessionId(rule.sessionId || "ALL");
 
     let parsedBtns: any[] = [];
+    let detectedMenuType: "TEXT_NUMBER" | "WA_LIST" = "TEXT_NUMBER";
+    let detectedListBtnText = "Silahkan Pilih :";
+    let detectedSectionTitle = "Pilihan Menu Layanan";
+
     if (rule.buttons) {
       try {
-        parsedBtns = typeof rule.buttons === 'string' ? JSON.parse(rule.buttons) : rule.buttons;
+        const parsed = typeof rule.buttons === 'string' ? JSON.parse(rule.buttons) : rule.buttons;
+        if (Array.isArray(parsed)) {
+          parsedBtns = parsed;
+          detectedMenuType = "TEXT_NUMBER";
+        } else if (parsed && typeof parsed === 'object') {
+          detectedMenuType = parsed.menuType === "WA_LIST" ? "WA_LIST" : "TEXT_NUMBER";
+          detectedListBtnText = parsed.listButtonText || "Silahkan Pilih :";
+          detectedSectionTitle = parsed.sectionTitle || "Pilihan Menu Layanan";
+          parsedBtns = Array.isArray(parsed.items) ? parsed.items : [];
+        }
       } catch {
         parsedBtns = [];
       }
     }
+
+    setMenuType(detectedMenuType);
+    setListButtonText(detectedListBtnText);
+    setSectionTitle(detectedSectionTitle);
 
     const normalizedBtns: BotButton[] = Array.isArray(parsedBtns)
       ? parsedBtns.map(b => ({
@@ -250,11 +275,10 @@ export default function BotPage() {
         }))
       : [];
 
-    setMenuFormat("LIST");
     setButtonsList(normalizedBtns);
     setTestInput("");
     const firstKeyword = rule.keywords.split(',')[0]?.trim() || "halo";
-    resetChatSimulation(firstKeyword, rule.response, normalizedBtns);
+    resetChatSimulation(firstKeyword, rule.response, normalizedBtns, detectedMenuType);
     setIsModalOpen(true);
   };
 
@@ -303,22 +327,24 @@ export default function BotPage() {
       const activeBtns = updated.filter(b => b.label.trim());
       setSimulatedChatHistory(prev => prev.map((msg, idx) => idx === 1 ? { 
         ...msg, 
-        text: formatBotMessage(response || "Halo! Silakan pilih layanan:", activeBtns, false),
-        buttons: activeBtns
+        text: menuType === "WA_LIST" ? (response || "Halo! Silakan pilih layanan:") : formatBotMessage(response || "Halo! Silakan pilih layanan:", activeBtns, false),
+        buttons: activeBtns,
+        isListMenu: menuType === "WA_LIST"
       } : msg));
     }
   };
 
   // Load the comprehensive 8 hospital menu list preset with nested poliklinik sub-options
-  const handleLoadHospital8MenuPreset = () => {
+  const handleLoadHospital8MenuPreset = (forcedType?: "TEXT_NUMBER" | "WA_LIST") => {
+    const targetType = forcedType || "WA_LIST";
     const presetItems: BotButton[] = [
       {
         id: "opt_1",
-        label: "1. Jadwal Praktik Dokter",
-        description: "Pilihan jadwal spesialis anak, penyakit dalam, obgyn, dll.",
+        label: "👨‍⚕️ Info RS dan Dokter",
+        description: "informasi RS dan Jadwal Dokter",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `*Jadwal Praktik Dokter RS Avisena:*\nSilakan pilih poliklinik spesialis yang ingin Anda tanyakan:`,
+        replyMessage: `📋 *Jadwal Praktik Dokter RS Avisena:*\nSilakan pilih poliklinik spesialis yang ingin Anda tanyakan:`,
         includeBackToMenu: true,
         value: "1",
         hasSubMenu: true,
@@ -327,109 +353,109 @@ export default function BotPage() {
             id: "sub_1",
             label: "Poli Anak & Tumbuh Kembang",
             description: "dr. Ahmad, Sp.A & dr. Dian, Sp.A",
-            replyMessage: `*Jadwal Praktik Poli Anak RS Avisena:*\n\n• dr. Ahmad, Sp.A: Senin - Jumat (08.00 - 12.00 WIB)\n• dr. Dian, Sp.A: Selasa, Kamis, Sabtu (13.00 - 16.00 WIB)\n\nLokasi: Poliklinik Lantai 2, Gedung Rawat Jalan.`
+            replyMessage: `👶 *Jadwal Praktik Poli Anak RS Avisena:*\n\n• dr. Ahmad, Sp.A: Senin - Jumat (08.00 - 12.00 WIB)\n• dr. Dian, Sp.A: Selasa, Kamis, Sabtu (13.00 - 16.00 WIB)\n\nLokasi: Poliklinik Lantai 2, Gedung Rawat Jalan.`
           },
           {
             id: "sub_2",
             label: "Poli Penyakit Dalam (Internis)",
             description: "dr. Siti, Sp.PD & dr. Hendra, Sp.PD",
-            replyMessage: `*Jadwal Praktik Poli Penyakit Dalam:*\n\n• dr. Siti, Sp.PD: Senin - Sabtu (09.00 - 14.00 WIB)\n• dr. Hendra, Sp.PD: Senin, Rabu, Jumat (16.00 - 19.00 WIB)\n\nLokasi: Poliklinik Lantai 1, Gedung Utama.`
+            replyMessage: `🩺 *Jadwal Praktik Poli Penyakit Dalam:*\n\n• dr. Siti, Sp.PD: Senin - Sabtu (09.00 - 14.00 WIB)\n• dr. Hendra, Sp.PD: Senin, Rabu, Jumat (16.00 - 19.00 WIB)\n\nLokasi: Poliklinik Lantai 1, Gedung Utama.`
           },
           {
             id: "sub_3",
             label: "Poli Kandungan & Kebidanan (Obgyn)",
             description: "dr. Maya, Sp.OG (USG 4D)",
-            replyMessage: `*Jadwal Praktik Poli Kandungan (Obgyn):*\n\n• dr. Maya, Sp.OG: Senin - Kamis (10.00 - 15.00 WIB)\n• dr. Reza, Sp.OG: Jumat & Sabtu (09.00 - 13.00 WIB)\n\nLayanan: Pemeriksaan Kehamilan, USG 4D, & Konsultasi Fertilitas.`
+            replyMessage: `🤰 *Jadwal Praktik Poli Kandungan (Obgyn):*\n\n• dr. Maya, Sp.OG: Senin - Kamis (10.00 - 15.00 WIB)\n• dr. Reza, Sp.OG: Jumat & Sabtu (09.00 - 13.00 WIB)\n\nLayanan: Pemeriksaan Kehamilan, USG 4D, & Konsultasi Fertilitas.`
           },
           {
             id: "sub_4",
             label: "Poli Gigi & Bedah Mulut",
             description: "drg. Budi & drg. Rina, Sp.BM",
-            replyMessage: `*Jadwal Praktik Poli Gigi & Bedah Mulut:*\n\n• drg. Budi: Senin - Jumat (13.00 - 17.00 WIB)\n• drg. Rina, Sp.BM: Selasa & Kamis (17.00 - 20.00 WIB)\n\nLayanan: Tambal Gigi, Scaling, Cabut Gigi Bungsu, & Ortodonti.`
+            replyMessage: `🦷 *Jadwal Praktik Poli Gigi & Bedah Mulut:*\n\n• drg. Budi: Senin - Jumat (13.00 - 17.00 WIB)\n• drg. Rina, Sp.BM: Selasa & Kamis (17.00 - 20.00 WIB)\n\nLayanan: Tambal Gigi, Scaling, Cabut Gigi Bungsu, & Ortodonti.`
           }
         ]
       },
       {
         id: "opt_2",
-        label: "2. Pendaftaran & Antrean Klinik",
-        description: "Panduan ambil nomor antrean poli & cek kuota dokter",
+        label: "📝 Pendaftaran RS",
+        description: "Pendaftaran RS online & antrean poli",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `*Pendaftaran & Antrean Klinik Avisena:*\n\n1. Pendaftaran online dibuka H-1 pemeriksaan melalui portal website resmi kami.\n2. Siapkan nomor RM (Rekam Medis) atau NIK KTP Anda.\n3. Kuota poliklinik dibuka setiap hari pukul 06.00 WIB.\n4. Simpan nomor barcode antrean digital Anda untuk konfirmasi di mesin check-in RS.`,
+        replyMessage: `📝 *Pendaftaran & Antrean Klinik Avisena:*\n\n1. Pendaftaran online dibuka H-1 pemeriksaan melalui portal website resmi kami.\n2. Siapkan nomor RM (Rekam Medis) atau NIK KTP Anda.\n3. Kuota poliklinik dibuka setiap hari pukul 06.00 WIB.\n4. Simpan nomor barcode antrean digital Anda untuk konfirmasi di mesin check-in RS.`,
         includeBackToMenu: true,
         value: "2"
       },
       {
         id: "opt_3",
-        label: "3. Ketersediaan Kamar Rawat Inap",
-        description: "Informasi Bed Monitoring, kapasitas kelas & tarif",
+        label: "🩻 Info Hasil Check Up",
+        description: "Informasi hasil tes lab dan/atau radiologi",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `*Monitoring Kamar Rawat Inap RS Avisena (Update Hari Ini):*\n\n• VVIP: 2 Bed Tersedia (Rp 1.200.000/hari)\n• VIP: 5 Bed Tersedia (Rp 850.000/hari)\n• Kelas 1: 8 Bed Tersedia (Rp 500.000/hari)\n• Kelas 2: 12 Bed Tersedia (Rp 350.000/hari)\n• Kelas 3: 15 Bed Tersedia (Tercover BPJS Kesehatan)\n• ICU / NICU: 3 Bed Siap Pakai`,
+        replyMessage: `🩻 *Info Hasil Laboratorium & Radiologi:*\n\n• Hasil laboratorium rutin (darah, urine) selesai dalam 2-3 jam.\n• Hasil rontgen, USG, dan CT Scan dapat diambil H+1 pemeriksaan.\n• Anda dapat mengunduh hasil digital via portal pasien Avisena dengan nomor RM dan tanggal lahir.`,
         includeBackToMenu: true,
         value: "3"
       },
       {
         id: "opt_4",
-        label: "4. Jam Besuk Pasien",
-        description: "Aturan, tata tertib & jadwal kunjungan rawat inap",
+        label: "💊 Informasi Pesanan Obat",
+        description: "Informasi pesanan obat di instalasi farmasi",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `*Jadwal & Tata Tertib Jam Besuk Pasien:*\n\n• Siang: 11.00 - 13.00 WIB\n• Sore: 17.00 - 19.00 WIB\n\n*Tata Tertib Kunjungan:*\n- Maksimal 2 orang pengunjung secara bergantian.\n- Anak di bawah usia 12 tahun tidak diperkenankan masuk ke area ruang perawatan demi keselamatan kesehatan.`,
+        replyMessage: `💊 *Informasi Instalasi Farmasi RS Avisena:*\n\n• Obat non-racikan siap dalam 15-30 menit setelah verifikasi resep dokter.\n• Obat racikan puyer/salep memerlukan waktu 30-60 menit.\n• Layanan antar obat (Avisena Med-Delivery) siap melayani pengantaran sampai ke rumah Anda.`,
         includeBackToMenu: true,
         value: "4"
       },
       {
         id: "opt_5",
-        label: "5. Informasi BPJS & Asuransi",
-        description: "Alur rujukan, syarat berkas BPJS & asuransi rekanan",
+        label: "🛏️ Ketersediaan Kamar Rawat Inap",
+        description: "Monitoring Bed, kapasitas kelas & tarif",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `*Informasi BPJS Kesehatan & Asuransi Rekanan:*\n\n*Syarat Berkas Pasien BPJS:*\n1. Surat Rujukan Faskes 1 (Puskesmas/Klinik) yang masih aktif.\n2. Kartu BPJS & KTP asli.\n3. Kartu Berobat RS Avisena.\n\n*Asuransi Rekanan AdMedika:* Prudential, Allianz, Manulife, Sinarmas, Astra Life, Mandiri Inhealth, dll.`,
+        replyMessage: `🛏️ *Monitoring Kamar Rawat Inap RS Avisena (Update Hari Ini):*\n\n• VVIP: 2 Bed Tersedia (Rp 1.200.000/hari)\n• VIP: 5 Bed Tersedia (Rp 850.000/hari)\n• Kelas 1: 8 Bed Tersedia (Rp 500.000/hari)\n• Kelas 2: 12 Bed Tersedia (Rp 350.000/hari)\n• Kelas 3: 15 Bed Tersedia (Tercover BPJS Kesehatan)\n• ICU / NICU: 3 Bed Siap Pakai`,
         includeBackToMenu: true,
         value: "5"
       },
       {
         id: "opt_6",
-        label: "6. Layanan & Fasilitas Medis",
-        description: "Operasional IGD 24 Jam, Lab, Radiologi, Apotek, MCU",
+        label: "⏰ Jam Besuk Pasien",
+        description: "Aturan, tata tertib & jadwal kunjungan",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `*Fasilitas & Layanan Medis RS Avisena:*\n\n• IGD 24 Jam & Ruang Tindakan Gawat Darurat\n• Laboratorium Patologi Klinik 24 Jam\n• Radiologi Digital (CT Scan, USG 4D, X-Ray)\n• Farmasi & Apotek Siaga 24 Jam\n• Medical Check Up (MCU) Personal & Korporat\n• Ruang Fisioterapi & Rehabilitasi Medik`,
+        replyMessage: `⏰ *Jadwal & Tata Tertib Jam Besuk Pasien:*\n\n• Siang: 11.00 - 13.00 WIB\n• Sore: 17.00 - 19.00 WIB\n\n*Tata Tertib Kunjungan:*\n- Maksimal 2 orang pengunjung secara bergantian.\n- Anak di bawah usia 12 tahun tidak diperkenankan masuk ke area ruang perawatan demi keselamatan kesehatan.`,
         includeBackToMenu: true,
         value: "6"
       },
       {
         id: "opt_7",
-        label: "7. Lokasi & Kontak Darurat",
-        description: "Tautan Google Maps, nomor ambulans & kontak darurat",
+        label: "💳 Informasi BPJS & Asuransi",
+        description: "Alur rujukan, syarat berkas & asuransi rekanan",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `*Lokasi & Kontak Darurat Avisena:*\n\n• Alamat: Jl. Raya Avisena No. 100\n• IGD Call Center: 021-555-1199\n• Ambulans Siaga 24 Jam: 0811-999-118\n• Website: https://avisena.co.id\n• Google Maps: https://maps.google.com/?q=RS+Avisena`,
+        replyMessage: `💳 *Informasi BPJS Kesehatan & Asuransi Rekanan:*\n\n*Syarat Berkas Pasien BPJS:*\n1. Surat Rujukan Faskes 1 (Puskesmas/Klinik) yang masih aktif.\n2. Kartu BPJS & KTP asli.\n3. Kartu Berobat RS Avisena.\n\n*Asuransi Rekanan AdMedika:* Prudential, Allianz, Manulife, Sinarmas, Astra Life, Mandiri Inhealth, dll.`,
         includeBackToMenu: true,
         value: "7"
       },
       {
         id: "opt_8",
-        label: "8. Hubungi Petugas (Operator)",
-        description: "Sambungkan chat dengan staf Customer Care / Helpdesk",
+        label: "📞 Nomor Pelayanan RS",
+        description: "Nomor kontak Pelayanan Rumah Sakit & Customer Care",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
-        replyMessage: `*Customer Care Avisena Healthcare:*\n\nPesan Anda telah diteruskan ke tim Customer Care kami. Mohon tunggu beberapa saat, petugas kami akan segera membalas chat Anda secara langsung. (Jam operasional operator: 08.00 - 20.00 WIB).`,
+        replyMessage: `📞 *Nomor Pelayanan & Kontak Resmi RS Avisena:*\n\n• Customer Care Call Center: (021) 555-1199\n• IGD & Ambulans Siaga 24 Jam: 0811-999-118\n• Helpdesk Pendaftaran: 0812-3456-7890\n• Alamat: Jl. Raya Avisena No. 100\n\nPesan Anda telah diteruskan ke petugas kami. Mohon tunggu beberapa saat.`,
         includeBackToMenu: true,
         value: "8"
       }
     ];
 
-    setMenuFormat("LIST");
+    setMenuType(targetType);
+    setListButtonText("Silahkan Pilih :");
+    setSectionTitle("Layanan Rumah Sakit Avisena");
     setButtonsList(presetItems);
-    if (!name) setName("Menu Layanan Rumah Sakit");
-    if (!response) setResponse("Halo! Selamat datang di Layanan Informasi Resmi *Avisena Healthcare Group* \n\nSilakan pilih layanan yang Anda butuhkan melalui daftar menu di bawah:");
-    resetChatSimulation(
-      "halo",
-      "Halo! Selamat datang di Layanan Informasi Resmi *Avisena Healthcare Group* \n\nSilakan pilih layanan yang Anda butuhkan melalui daftar menu di bawah:",
-      presetItems
-    );
+    if (!name) setName("Menu Layanan Resmi Rumah Sakit");
+    if (!keywords) setKeywords("halo, menu, bantuan, dokter, rsu avisena");
+    const introMsg = "Halo Sahabat Avisena 👋\nSelamat datang di WhatsApp Official RSU Avisena.\nAda yang bisa kami bantu hari ini?\n\nKami siap mendampingi kesehatan Anda melalui pilihan layanan di bawah.\n\nBersama RSU Avisena, kesehatan Anda adalah prioritas kami 💙";
+    setResponse(introMsg);
+    resetChatSimulation("halo", introMsg, presetItems, targetType);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -456,12 +482,19 @@ export default function BotPage() {
             : undefined
         }));
 
+      const buttonPayload = validButtons.length > 0 ? {
+        menuType,
+        listButtonText: listButtonText.trim() || "Silahkan Pilih :",
+        sectionTitle: sectionTitle.trim() || "Pilihan Menu Layanan",
+        items: validButtons
+      } : null;
+
       const payload = {
         name,
         triggerType,
         keywords,
         response,
-        buttons: validButtons.length > 0 ? JSON.stringify(validButtons) : null,
+        buttons: buttonPayload ? JSON.stringify(buttonPayload) : null,
         isActive,
         sessionId: selectedSessionId === "ALL" ? null : selectedSessionId
       };
@@ -532,9 +565,9 @@ export default function BotPage() {
       const botMsg: ChatMessage = {
         id: `bot-${Date.now() + 1}`,
         sender: "bot",
-        text: formatBotMessage(response || "Halo! Selamat datang di Menu Utama.", activeBtns, false),
+        text: menuType === "WA_LIST" ? (response || "Halo! Selamat datang di Menu Utama.") : formatBotMessage(response || "Halo! Selamat datang di Menu Utama.", activeBtns, false),
         buttons: activeBtns,
-        isListMenu: false,
+        isListMenu: menuType === "WA_LIST",
         time: timeNow
       };
       setSimulatedChatHistory(prev => [...prev, patientMsg, botMsg]);
@@ -580,7 +613,7 @@ export default function BotPage() {
     if (btn.replyMessage?.trim()) {
       let replyWithMenu = btn.replyMessage.trim();
       if (!replyWithMenu.includes('0') && !replyWithMenu.toLowerCase().includes('menu')) {
-        replyWithMenu = `${replyWithMenu}\n\n*Ketik 0 atau MENU untuk kembali ke menu utama.*`;
+        replyWithMenu = `${replyWithMenu}\n\n👉 *Ketik 0 atau MENU untuk kembali ke menu utama.*`;
       }
       const returnBtn: BotButton[] = [
         {
@@ -674,9 +707,9 @@ export default function BotPage() {
       const botMsg: ChatMessage = {
         id: `bot-${Date.now() + 1}`,
         sender: "bot",
-        text: formatBotMessage(response || "Halo! Selamat datang di Menu Utama.", activeBtns, false),
+        text: menuType === "WA_LIST" ? (response || "Halo! Selamat datang di Menu Utama.") : formatBotMessage(response || "Halo! Selamat datang di Menu Utama.", activeBtns, false),
         buttons: activeBtns,
-        isListMenu: false,
+        isListMenu: menuType === "WA_LIST",
         time: timeNow
       };
       setSimulatedChatHistory(prev => [...prev, patientMsg, botMsg]);
@@ -708,9 +741,9 @@ export default function BotPage() {
       const botMsg: ChatMessage = {
         id: `bot-${Date.now() + 1}`,
         sender: "bot",
-        text: formatBotMessage(response || "(Pesan bot kosong)", activeBtns),
+        text: menuType === "WA_LIST" ? (response || "(Pesan bot kosong)") : formatBotMessage(response || "(Pesan bot kosong)", activeBtns),
         buttons: activeBtns,
-        isListMenu: false,
+        isListMenu: menuType === "WA_LIST",
         time: timeNow
       };
       setSimulatedChatHistory(prev => [...prev, patientMsg, botMsg]);
@@ -751,7 +784,7 @@ export default function BotPage() {
       sender: "bot",
       text: "Maaf, pesan Anda belum kami kenali. Silakan ketik angka pilihan menu (1-8) atau klik tombol menu di bawah.",
       buttons: buttonsList.filter(b => b.label.trim()),
-      isListMenu: menuFormat === "LIST" || buttonsList.length > 3,
+      isListMenu: menuType === "WA_LIST",
       time: timeNow
     };
     setSimulatedChatHistory(prev => [...prev, patientMsg, unmatchedMsg]);
@@ -907,9 +940,19 @@ export default function BotPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredRules.map((rule) => {
             let ruleButtons: BotButton[] = [];
+            let ruleMenuType: "TEXT_NUMBER" | "WA_LIST" = "TEXT_NUMBER";
+            let ruleListBtnText = "Silahkan Pilih :";
             if (rule.buttons) {
               try {
-                ruleButtons = typeof rule.buttons === 'string' ? JSON.parse(rule.buttons) : rule.buttons;
+                const parsed = typeof rule.buttons === 'string' ? JSON.parse(rule.buttons) : rule.buttons;
+                if (Array.isArray(parsed)) {
+                  ruleButtons = parsed;
+                  ruleMenuType = "TEXT_NUMBER";
+                } else if (parsed && typeof parsed === 'object') {
+                  ruleMenuType = parsed.menuType === "WA_LIST" ? "WA_LIST" : "TEXT_NUMBER";
+                  ruleListBtnText = parsed.listButtonText || "Silahkan Pilih :";
+                  ruleButtons = Array.isArray(parsed.items) ? parsed.items : [];
+                }
               } catch {}
             }
             const isList = ruleButtons.length > 3 || ruleButtons.some(b => b.description || b.type === "LIST_ITEM");
@@ -958,10 +1001,17 @@ export default function BotPage() {
 
                         {/* Interactive Menu Badge */}
                         {Array.isArray(ruleButtons) && ruleButtons.length > 0 && (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 bg-teal-100 text-[#006D5B] dark:bg-teal-950 dark:text-teal-300">
-                            <List className="w-3 h-3" />
-                            {ruleButtons.length} Menu Pilihan (Ketik 1-{ruleButtons.length})
-                          </span>
+                          ruleMenuType === "WA_LIST" ? (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950 dark:border-emerald-800 dark:text-emerald-300">
+                              <Menu className="w-3 h-3 text-[#00A389]" />
+                              WA List: "{ruleListBtnText}" ({ruleButtons.length})
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 bg-teal-100 text-[#006D5B] dark:bg-teal-950 dark:text-teal-300">
+                              <List className="w-3 h-3" />
+                              {ruleButtons.length} Menu Angka (1-{ruleButtons.length})
+                            </span>
+                          )
                         )}
 
                         {/* Active Status Badge */}
@@ -1017,8 +1067,17 @@ export default function BotPage() {
                   {Array.isArray(ruleButtons) && ruleButtons.length > 0 && (
                     <div className="pt-2 border-t border-border/50 space-y-1.5">
                       <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                        <List className="w-3 h-3 text-[#00A389]" />
-                        Daftar Pilihan Menu (Ketik angka 1-{ruleButtons.length}):
+                        {ruleMenuType === "WA_LIST" ? (
+                          <>
+                            <Menu className="w-3 h-3 text-[#00A389]" />
+                            Tombol List WhatsApp: "{ruleListBtnText}" ({ruleButtons.length} Pilihan):
+                          </>
+                        ) : (
+                          <>
+                            <List className="w-3 h-3 text-[#00A389]" />
+                            Daftar Pilihan Menu (Ketik angka 1-{ruleButtons.length}):
+                          </>
+                        )}
                       </span>
                       <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
                         {ruleButtons.map((btn, bIdx) => (
@@ -1245,45 +1304,151 @@ export default function BotPage() {
                   />
                 </div>
 
-                {/* Format Menu Interaktif Bernomor (100% WhatsApp Compliant) */}
+                {/* Format Tampilan Menu Bot (WA List vs Angka Standar) */}
                 <div className="space-y-3 pt-3 pb-1 border-t border-border/70">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
                       <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                         <Layers className="w-3.5 h-3.5 text-[#00A389]" />
-                        Daftar Menu Pilihan Pasien (Ketik Angka 1-10)
+                        Tipe Format Tampilan Bot WhatsApp
                       </Label>
                       <p className="text-[11px] text-muted-foreground">
-                        Diformat menjadi menu angka WhatsApp interaktif yang aman dan langsung terkirim
+                        Pilih gaya tampilan menu balasan yang ingin dikirimkan kepada pasien di WhatsApp
                       </p>
                     </div>
+                  </div>
 
-                    <div className="flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 text-[11px] font-semibold shrink-0 self-start sm:self-auto">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>100% Terkirim & Instan</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Option 1: WhatsApp Native List Menu (Hermina Style) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuType("WA_LIST");
+                        resetChatSimulation(undefined, undefined, undefined, "WA_LIST");
+                      }}
+                      className={cn(
+                        "p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer",
+                        menuType === "WA_LIST"
+                          ? "bg-teal-50/90 border-[#00A389] text-[#006D5B] dark:bg-teal-950/40 dark:border-[#00A389] dark:text-teal-300 shadow-sm ring-1 ring-[#00A389]"
+                          : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
+                      )}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="font-bold text-xs flex items-center gap-1.5 text-foreground">
+                            <Menu className="w-4 h-4 text-[#00A389]" />
+                            WhatsApp List Menu
+                          </span>
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#00A389]/15 text-[#00A389]">
+                            Mirip RS Hermina
+                          </span>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-muted-foreground">
+                          Memunculkan tombol <b>"{listButtonText || 'Silahkan Pilih :'}"</b> yang membuka popup/sheet pilihan resmi WhatsApp saat diklik pasien.
+                        </p>
+                      </div>
+                      <div className="pt-2 flex items-center justify-between text-[10px] font-semibold border-t border-border/40 mt-2">
+                        <span>Sheet Pilihan Interaktif</span>
+                        {menuType === "WA_LIST" ? (
+                          <span className="text-[#00A389] flex items-center gap-1 font-bold">
+                            <Check className="w-3 h-3" /> Aktif
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">Pilih Tipe Ini</span>
+                        )}
+                      </div>
+                    </button>
+
+                    {/* Option 2: Menu Teks Bernomor */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuType("TEXT_NUMBER");
+                        resetChatSimulation(undefined, undefined, undefined, "TEXT_NUMBER");
+                      }}
+                      className={cn(
+                        "p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer",
+                        menuType === "TEXT_NUMBER"
+                          ? "bg-teal-50/90 border-[#00A389] text-[#006D5B] dark:bg-teal-950/40 dark:border-[#00A389] dark:text-teal-300 shadow-sm ring-1 ring-[#00A389]"
+                          : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
+                      )}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="font-bold text-xs flex items-center gap-1.5 text-foreground">
+                            <List className="w-4 h-4 text-[#10448E]" />
+                            Menu Teks Angka
+                          </span>
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                            Standar Kompatibel
+                          </span>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-muted-foreground">
+                          Format balasan pesan teks berangka (1, 2, 3...). Pasien membalas dengan mengetik angka atau kata kunci untuk memilih menu.
+                        </p>
+                      </div>
+                      <div className="pt-2 flex items-center justify-between text-[10px] font-semibold border-t border-border/40 mt-2">
+                        <span>Balas Ketik Angka 1-10</span>
+                        {menuType === "TEXT_NUMBER" ? (
+                          <span className="text-[#00A389] flex items-center gap-1 font-bold">
+                            <Check className="w-3 h-3" /> Aktif
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">Pilih Tipe Ini</span>
+                        )}
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Konfigurasi Khusus WA_LIST */}
+                  {menuType === "WA_LIST" && (
+                    <div className="bg-teal-50/70 dark:bg-teal-950/20 p-3 rounded-xl border border-teal-200/80 dark:border-teal-800/60 space-y-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <Label className="text-[11px] font-medium text-teal-950 dark:text-teal-200 mb-1 block">
+                            Label Tombol Pilihan WhatsApp:
+                          </Label>
+                          <Input
+                            value={listButtonText}
+                            onChange={(e) => setListButtonText(e.target.value)}
+                            placeholder="Contoh: Silahkan Pilih :"
+                            className="h-8 text-xs bg-background border-border"
+                          />
+                          <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                            Tombol ini muncul di bawah chat (default: <code>Silahkan Pilih :</code>)
+                          </span>
+                        </div>
+
+                        <div>
+                          <Label className="text-[11px] font-medium text-teal-950 dark:text-teal-200 mb-1 block">
+                            Judul Seksi Menu (Section Header):
+                          </Label>
+                          <Input
+                            value={sectionTitle}
+                            onChange={(e) => setSectionTitle(e.target.value)}
+                            placeholder="Contoh: Pilihan Menu Layanan"
+                            className="h-8 text-xs bg-background border-border"
+                          />
+                          <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                            Judul header saat popup sheet pilihan terbuka
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-
-                  {/* Penjelasan Kompatibilitas WhatsApp */}
-                  <div className="bg-sky-50/70 dark:bg-sky-950/30 p-2.5 rounded-xl border border-sky-200 dark:border-sky-800 text-[11px] text-sky-900 dark:text-sky-200 leading-relaxed flex items-start gap-2">
-                    <Sparkles className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
-                    <span>
-                      <b>Standar WhatsApp Multi-Device:</b> Pilihan di bawah otomatis dirangkai menjadi menu berangka resmi (contoh: <code>1️⃣ Jadwal Dokter</code>). Pasien cukup membalas dengan mengetik angka <b>1</b> atau kata kuncinya untuk mendapatkan balasan informasi secara otomatis.
-                    </span>
-                  </div>
+                  )}
 
                   {/* Preset 1-Click Button for 8 Hospital Items */}
                   <div className="flex items-center justify-between bg-teal-50/70 dark:bg-teal-950/30 p-2.5 rounded-xl border border-teal-200 dark:border-teal-800">
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-[#00A389] shrink-0" />
                       <span className="text-xs font-semibold text-teal-900 dark:text-teal-200">
-                        Ingin menu layanan rumah sakit lengkap?
+                        Ingin menu layanan rumah sakit lengkap (seperti RS Hermina)?
                       </span>
                     </div>
                     <Button
                       type="button"
                       size="sm"
-                      onClick={handleLoadHospital8MenuPreset}
+                      onClick={() => handleLoadHospital8MenuPreset("WA_LIST")}
                       className="bg-[#00A389] hover:bg-[#008771] text-white text-[11px] h-7 px-2.5 font-medium shadow-xs"
                     >
                       Muat 8 Menu RS
@@ -1666,8 +1831,22 @@ export default function BotPage() {
                           {msg.time} {msg.sender === "patient" && <Check className="w-3 h-3 text-sky-500 inline ml-0.5" />}
                         </span>
 
-                        {/* Interactive UI: Realistic WhatsApp Numbered Action Pills */}
-                        {msg.sender === "bot" && msg.buttons && msg.buttons.length > 0 && (
+                        {/* Interactive UI: WhatsApp List Button (Hermina Style) */}
+                        {msg.sender === "bot" && (msg.isListMenu || menuType === "WA_LIST") && (
+                          <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 mt-2">
+                            <button
+                              type="button"
+                              onClick={() => setIsListSheetOpen(true)}
+                              className="w-full py-2.5 px-3 bg-white dark:bg-[#1f2c34] hover:bg-slate-50 dark:hover:bg-[#2a3942] text-[#00a884] dark:text-[#00a884] font-semibold text-xs rounded-lg border border-slate-200 dark:border-slate-700/80 flex items-center justify-center gap-2 shadow-2xs transition-all active:scale-[0.98] cursor-pointer group"
+                            >
+                              <Menu className="w-3.5 h-3.5 text-[#00a884] group-hover:scale-110 transition-transform" />
+                              <span>{listButtonText || "Silahkan Pilih :"}</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Standard Numbered Action Pills (Text Number Mode) */}
+                        {msg.sender === "bot" && !msg.isListMenu && menuType !== "WA_LIST" && msg.buttons && msg.buttons.length > 0 && (
                           <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 space-y-1.5 mt-2">
                             <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold">
                               <span>Uji Pilihan Pasien:</span>
@@ -1701,10 +1880,85 @@ export default function BotPage() {
                   ))}
 
                   <p className="text-[10px] text-center text-muted-foreground italic pt-1">
-                    <b>Uji Coba:</b> Klik pilihan di atas atau ketik angka 1-{buttonsList.length || 8} di kolom bawah!
+                    {menuType === "WA_LIST" ? (
+                      <span><b>Uji Coba:</b> Klik tombol <b>"{listButtonText || 'Silahkan Pilih :'}"</b> di atas untuk membuka popup sheet pilihan!</span>
+                    ) : (
+                      <span><b>Uji Coba:</b> Klik pilihan di atas atau ketik angka 1-{buttonsList.length || 8} di kolom bawah!</span>
+                    )}
                   </p>
 
                 </div>
+
+                {/* Realistic WhatsApp Slide-Up Bottom Sheet Modal Simulation (Hermina Arcamanik Style) */}
+                {isListSheetOpen && (
+                  <div className="absolute inset-0 bg-black/60 z-30 flex flex-col justify-end rounded-xl overflow-hidden backdrop-blur-[1px] animate-in fade-in duration-200">
+                    {/* Backdrop area click to dismiss */}
+                    <div className="flex-1 cursor-pointer" onClick={() => setIsListSheetOpen(false)} />
+
+                    {/* Bottom Sheet Card */}
+                    <div className="bg-white dark:bg-[#111b21] rounded-t-2xl shadow-2xl border-t border-slate-200 dark:border-slate-800 max-h-[85%] flex flex-col animate-in slide-in-from-bottom duration-200">
+                      
+                      {/* Handle Bar */}
+                      <div className="flex justify-center pt-2.5 pb-1">
+                        <div className="w-10 h-1 bg-slate-300 dark:bg-slate-600 rounded-full" />
+                      </div>
+
+                      {/* Header */}
+                      <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                        <button 
+                          type="button" 
+                          onClick={() => setIsListSheetOpen(false)}
+                          className="p-1 -ml-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                          title="Tutup Sheet"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                        <h4 className="font-semibold text-xs text-slate-800 dark:text-slate-100 text-center flex-1 pr-4">
+                          {listButtonText || "Silahkan Pilih :"}
+                        </h4>
+                      </div>
+
+                      {/* Options List */}
+                      <div className="p-2 overflow-y-auto space-y-1 divide-y divide-slate-100 dark:divide-slate-800/60 max-h-[280px]">
+                        {buttonsList.filter(b => b.label.trim()).length === 0 ? (
+                          <div className="py-8 text-center text-xs text-slate-400">
+                            Belum ada pilihan menu. Tambahkan di form sebelah kiri!
+                          </div>
+                        ) : (
+                          buttonsList.filter(b => b.label.trim()).map((btn, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => handlePreviewOptionClick(btn)}
+                              className="pt-2.5 pb-2.5 px-3 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer transition-colors group"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 group-hover:text-[#00A389] transition-colors leading-tight">
+                                  {btn.label}
+                                </p>
+                                {btn.description && (
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1 leading-tight">
+                                    {btn.description}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="w-4 h-4 rounded-full border-2 border-slate-300 dark:border-slate-600 group-hover:border-[#00A389] flex items-center justify-center shrink-0 transition-colors">
+                                <div className="w-2 h-2 rounded-full bg-transparent group-hover:bg-[#00A389] transition-colors" />
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* Footer Text */}
+                      <div className="py-2.5 px-4 text-center border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-[#0b141a]/50">
+                        <span className="text-[10px] text-slate-400 font-sans">
+                          Tap to select an item
+                        </span>
+                      </div>
+
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Patient Test Input Bar at bottom */}

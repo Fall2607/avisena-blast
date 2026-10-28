@@ -117,6 +117,46 @@ interface UserBotSession {
 
 const userBotSessions = new Map<string, UserBotSession>();
 
+interface ParsedBotButtons {
+  menuType: 'TEXT_NUMBER' | 'WA_LIST';
+  listButtonText: string;
+  sectionTitle: string;
+  items: any[];
+}
+
+const parseBotButtons = (rawButtons: string | any | null | undefined): ParsedBotButtons => {
+  if (!rawButtons) {
+    return { menuType: 'TEXT_NUMBER', listButtonText: 'Silahkan Pilih :', sectionTitle: 'Pilihan Layanan', items: [] };
+  }
+
+  let parsed: any = null;
+  try {
+    parsed = typeof rawButtons === 'string' ? JSON.parse(rawButtons) : rawButtons;
+  } catch {
+    return { menuType: 'TEXT_NUMBER', listButtonText: 'Silahkan Pilih :', sectionTitle: 'Pilihan Layanan', items: [] };
+  }
+
+  if (Array.isArray(parsed)) {
+    return {
+      menuType: 'TEXT_NUMBER',
+      listButtonText: 'Silahkan Pilih :',
+      sectionTitle: 'Pilihan Layanan',
+      items: parsed
+    };
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    return {
+      menuType: parsed.menuType === 'WA_LIST' ? 'WA_LIST' : 'TEXT_NUMBER',
+      listButtonText: parsed.listButtonText || 'Silahkan Pilih :',
+      sectionTitle: parsed.sectionTitle || 'Pilihan Layanan',
+      items: Array.isArray(parsed.items) ? parsed.items : []
+    };
+  }
+
+  return { menuType: 'TEXT_NUMBER', listButtonText: 'Silahkan Pilih :', sectionTitle: 'Pilihan Layanan', items: [] };
+};
+
 // Handle incoming messages for WhatsApp Bot Auto-Reply
 const sendInteractiveOrTextMessage = async (
   sock: WASocket,
@@ -125,11 +165,67 @@ const sendInteractiveOrTextMessage = async (
   text: string,
   title: string,
   options: any[],
-  isSubMenu: boolean = false
+  isSubMenu: boolean = false,
+  menuType: 'TEXT_NUMBER' | 'WA_LIST' = 'TEXT_NUMBER',
+  listButtonText: string = 'Silahkan Pilih :',
+  sectionTitle: string = 'Pilihan Layanan'
 ) => {
+  // 1. If WA_LIST is selected and options exist: try sending native WhatsApp single_select interactive message (Hermina Style)
+  if (menuType === 'WA_LIST' && Array.isArray(options) && options.length > 0) {
+    try {
+      const rows = options.map((btn, idx) => ({
+        id: btn.id || `opt_${idx + 1}`,
+        title: (btn.label || `Pilihan ${idx + 1}`).replace(/^\d+[\.\s\-]+/, '').trim().slice(0, 24),
+        description: (btn.description || '').trim().slice(0, 72)
+      }));
+
+      const singleSelectButton = {
+        name: 'single_select',
+        buttonParamsJson: JSON.stringify({
+          title: (listButtonText || 'Silahkan Pilih :').trim(),
+          sections: [
+            {
+              title: (sectionTitle || 'Pilihan Menu Layanan').trim(),
+              rows
+            }
+          ]
+        })
+      };
+
+      const interactiveMessage = proto.Message.InteractiveMessage.create({
+        body: proto.Message.InteractiveMessage.Body.create({ text: text.trim() }),
+        footer: proto.Message.InteractiveMessage.Footer.create({ text: 'Avisena Healthcare Group' }),
+        header: proto.Message.InteractiveMessage.Header.create({ title: title || 'Layanan Informasi RS', hasMediaAttachment: false }),
+        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+          buttons: [singleSelectButton]
+        })
+      });
+
+      const content = {
+        viewOnceMessage: {
+          message: {
+            messageContextInfo: {
+              deviceListMetadata: {},
+              deviceListMetadataVersion: 2
+            },
+            interactiveMessage
+          }
+        }
+      };
+
+      const userJid = sock.user?.id || remoteJid;
+      const waMsg = generateWAMessageFromContent(remoteJid, content, { userJid });
+      logger.info(`[Bot ${sessionId}] Sending WA_LIST interactive message to ${remoteJid}`);
+      await sock.relayMessage(remoteJid, waMsg.message!, { messageId: waMsg.key.id! });
+      return;
+    } catch (listErr) {
+      logger.warn(`[Bot ${sessionId}] Failed to send native WA_LIST interactive message, falling back to text: ${listErr}`);
+    }
+  }
+
+  // 2. Format list items or sub-options into a clean, numbered WhatsApp text menu (Default / Safe Fallback)
   let finalText = text;
 
-  // Format list items or sub-options into a clean, numbered WhatsApp interactive menu
   if (Array.isArray(options) && options.length > 0) {
     if (options.length === 1 && (options[0].value === 'menu' || options[0].label.toLowerCase().includes('menu'))) {
       if (!finalText.toLowerCase().includes('0') && !finalText.toLowerCase().includes('menu')) {
@@ -261,20 +357,18 @@ const sendInteractiveOrTextMessage = async (
 
           if (mainRule) {
             userBotSessions.set(sessionKey, { ruleId: mainRule.id, activeOptionId: null, lastActive: Date.now() });
-            let parsedButtons: any[] = [];
-            if (mainRule.buttons) {
-              try {
-                parsedButtons = typeof mainRule.buttons === 'string' ? JSON.parse(mainRule.buttons) : mainRule.buttons;
-              } catch {}
-            }
+            const { menuType, listButtonText, sectionTitle, items } = parseBotButtons(mainRule.buttons);
             await sendInteractiveOrTextMessage(
               sock,
               sessionId,
               remoteJid,
               mainRule.response,
               mainRule.name,
-              parsedButtons,
-              false
+              items,
+              false,
+              menuType,
+              listButtonText,
+              sectionTitle
             );
             continue;
           }
@@ -285,8 +379,8 @@ const sendInteractiveOrTextMessage = async (
           const parentRule = rules.find(r => r.id === activeUserSession.ruleId);
           if (parentRule && parentRule.buttons) {
             try {
-              const btns = typeof parentRule.buttons === 'string' ? JSON.parse(parentRule.buttons) : parentRule.buttons;
-              const parentOption = Array.isArray(btns) && btns.find((b: any, idx: number) => 
+              const { items: parentItems } = parseBotButtons(parentRule.buttons);
+              const parentOption = Array.isArray(parentItems) && parentItems.find((b: any, idx: number) => 
                 b.id === activeUserSession.activeOptionId || `opt_${idx + 1}` === activeUserSession.activeOptionId
               );
 
@@ -330,7 +424,7 @@ const sendInteractiveOrTextMessage = async (
         for (const rule of rules) {
           if (!rule.buttons) continue;
           try {
-            const btns = typeof rule.buttons === 'string' ? JSON.parse(rule.buttons) : rule.buttons;
+            const { menuType, listButtonText, sectionTitle, items: btns } = parseBotButtons(rule.buttons);
             if (Array.isArray(btns)) {
               for (let i = 0; i < btns.length; i++) {
                 const btn = btns[i];
@@ -339,7 +433,9 @@ const sendInteractiveOrTextMessage = async (
                   btn.id === clickedButtonId || 
                   `btn_${btn.id}` === clickedButtonId || 
                   btn.value === clickedButtonId ||
-                  `btn_opt_${i + 1}` === clickedButtonId
+                  `btn_opt_${i + 1}` === clickedButtonId ||
+                  `opt_${i + 1}` === clickedButtonId ||
+                  `row_${i + 1}` === clickedButtonId
                 );
                 const labelMatches = (clickedButtonLabel || incomingText) && btn.label && (
                   btn.label.toLowerCase().trim() === (clickedButtonLabel || incomingText).toLowerCase().trim() ||
@@ -365,7 +461,10 @@ const sendInteractiveOrTextMessage = async (
                       subMenuPrompt,
                       btn.label,
                       btn.subOptions,
-                      true // isSubMenu
+                      true, // isSubMenu
+                      menuType,
+                      listButtonText,
+                      btn.label
                     );
                     handledByOption = true;
                     break;
@@ -449,16 +548,7 @@ const sendInteractiveOrTextMessage = async (
             lastActive: Date.now() 
           });
 
-          let parsedButtons: any[] = [];
-          if (matchedRule.buttons) {
-            try {
-              parsedButtons = typeof matchedRule.buttons === 'string' 
-                ? JSON.parse(matchedRule.buttons) 
-                : matchedRule.buttons;
-            } catch (err) {
-              logger.warn(`[Bot ${sessionId}] Failed to parse buttons for rule ${matchedRule.id}: ${err}`);
-            }
-          }
+          const { menuType, listButtonText, sectionTitle, items } = parseBotButtons(matchedRule.buttons);
 
           await sendInteractiveOrTextMessage(
             sock,
@@ -466,8 +556,11 @@ const sendInteractiveOrTextMessage = async (
             remoteJid,
             matchedRule.response,
             matchedRule.name,
-            parsedButtons,
-            false
+            items,
+            false,
+            menuType,
+            listButtonText,
+            sectionTitle
           );
         }
       } catch (botErr) {
