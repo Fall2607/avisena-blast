@@ -62,6 +62,7 @@ function LoginForm() {
                 src="/avisena-logo-white.png" 
                 alt="Avisena Healthcare Group" 
                 fill 
+                sizes="208px"
                 className="object-contain object-left"
                 priority
               />
@@ -115,6 +116,7 @@ function LoginForm() {
                 src="/avisena-logo.png" 
                 alt="Avisena Healthcare Group" 
                 fill 
+                sizes="192px"
                 className="object-contain"
                 priority
               />

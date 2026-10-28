@@ -64,6 +64,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               src="/avisena-logo.png" 
               alt="Avisena Healthcare Group" 
               fill 
+              sizes="208px"
               className="object-contain"
               priority
             />
@@ -93,6 +94,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   src="/avisena-logo.png" 
                   alt="Avisena Healthcare Group" 
                   fill 
+                  sizes="208px"
                   className="object-contain object-left"
                   priority
                 />
