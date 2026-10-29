@@ -13,6 +13,8 @@
     "start:backend": "npm run start --workspace=backend",
     "start:frontend": "npm run start --workspace=frontend",
     "db:push": "npm run db:push --workspace=backend",
-    "db:generate": "npm run db:generate --workspace=backend"
+    "db:generate": "npm run db:generate --workspace=backend",
+    "db:seed": "npm run db:seed --workspace=backend",
+    "db:seed:bot": "npm run db:seed:bot --workspace=backend"
   }
 }

@@ -32,30 +32,26 @@ import {
   List,
   Menu,
   ChevronDown,
+  ChevronRight,
+  ChevronsUpDown,
+  FolderPlus,
   X,
   Layers
 } from "lucide-react";
 import api from "@/lib/axios";
 import { cn } from "@/lib/utils";
 
-interface BotSubOption {
-  id: string;
-  label: string;
-  description?: string;
-  replyMessage: string;
-}
-
 interface BotButton {
   id: string;
   label: string;
   description?: string;
-  type: "QUICK_REPLY" | "URL" | "CALL" | "LIST_ITEM";
-  actionType: "DIRECT_REPLY" | "LINK_RULE";
+  type?: "QUICK_REPLY" | "URL" | "CALL" | "LIST_ITEM";
+  actionType?: "DIRECT_REPLY" | "LINK_RULE";
   replyMessage: string;
   includeBackToMenu?: boolean;
   value?: string;
   hasSubMenu?: boolean;
-  subOptions?: BotSubOption[];
+  subOptions?: BotButton[]; // Recursive N-level nested sub-options!
 }
 
 interface BotRule {
@@ -103,17 +99,18 @@ export default function BotPage() {
   const [keywords, setKeywords] = useState("");
   const [response, setResponse] = useState("");
   const [buttonsList, setButtonsList] = useState<BotButton[]>([]);
-  const [menuType, setMenuType] = useState<"TEXT_NUMBER" | "WA_LIST">("TEXT_NUMBER");
-  const [listButtonText, setListButtonText] = useState("Silahkan Pilih :");
-  const [sectionTitle, setSectionTitle] = useState("Pilihan Menu Layanan");
   const [isActive, setIsActive] = useState(true);
   const [selectedSessionId, setSelectedSessionId] = useState("ALL");
   const [submitting, setSubmitting] = useState(false);
 
+  // Accordion Expand State: map of pathKey (e.g. "0", "0-1", "0-1-2") to boolean
+  const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>({ "0": true });
+
   // Multi-Turn Interactive WhatsApp Simulation Thread inside Modal
   const [simulatedChatHistory, setSimulatedChatHistory] = useState<ChatMessage[]>([]);
+  const [simulatedNavPath, setSimulatedNavPath] = useState<number[]>([]);
+  const [simulatedAtLeaf, setSimulatedAtLeaf] = useState<boolean>(false);
   const [testInput, setTestInput] = useState("");
-  const [isListSheetOpen, setIsListSheetOpen] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -141,17 +138,17 @@ export default function BotPage() {
   }, []);
 
   // Helper to format menu options into luxury numbered WhatsApp text message (100% Baileys & WhatsApp compliant)
-  const formatBotMessage = (text: string, btns: any[], isSubMenu: boolean = false) => {
+  const formatBotMessage = (text: string, btns: any[], isSubMenu: boolean = false, level: number = 0) => {
     if (!btns || btns.length === 0) {
       if (!text.includes('0') && !text.toLowerCase().includes('menu')) {
-        return `${text}\n\n*Ketik 0 atau MENU untuk kembali ke menu utama.*`;
+        return `${text}\n\n👉 *Ketik 0 untuk kembali ke menu sebelumnya, atau ketik MENU untuk ke Menu Utama.*`;
       }
       return text;
     }
     
     if (btns.length === 1 && (btns[0].value === 'menu' || btns[0].value === '0' || btns[0].label.toLowerCase().includes('menu'))) {
       if (!text.toLowerCase().includes('0') && !text.toLowerCase().includes('menu')) {
-        return `${text}\n\n*Ketik 0 atau MENU untuk kembali ke menu utama.*`;
+        return `${text}\n\n👉 *Ketik 0 untuk kembali ke menu sebelumnya, atau ketik MENU untuk ke Menu Utama.*`;
       }
       return text;
     }
@@ -165,31 +162,57 @@ export default function BotPage() {
         return `${num} *${label}*${desc}`;
       }).join('\n\n');
 
-      const backGuide = isSubMenu
-        ? `0. *Kembali ke Menu Utama*\n\n*Balas dengan angka (1-${btns.length}) atau ketik 0 untuk kembali ke menu utama.*`
-        : `0. *Kembali ke Menu Utama*\n\n*Balas dengan angka (1-${btns.length}) atau ketik 0 untuk menu utama.*`;
+      let backGuide = "";
+      if (level <= 1 && isSubMenu) {
+        backGuide = `0. *Kembali ke Menu Utama*\n\n👉 *Balas dengan angka (1-${btns.length}) atau ketik 0 untuk kembali ke menu utama.*`;
+      } else if (level > 1 && isSubMenu) {
+        backGuide = `0. *Kembali ke Menu Sebelumnya*\n\n👉 *Balas dengan angka (1-${btns.length}) atau ketik 0 untuk ke menu sebelumnya, atau ketik MENU untuk ke menu utama.*`;
+      } else {
+        backGuide = `👉 *Balas dengan angka (1-${btns.length}) untuk memilih menu.*`;
+      }
 
       return `${text}\n\n${formattedItems}\n\n${backGuide}`;
     }
     return text;
   };
 
+  // Resolve simulated location at current nav path
+  const resolveSimulatedState = (rootButtons: BotButton[], path: number[]) => {
+    let activeList = rootButtons.filter(b => b.label.trim());
+    let currentNode: BotButton | null = null;
+    const breadcrumbTitles: string[] = ["Menu Utama"];
+
+    for (const idx of path) {
+      if (activeList[idx]) {
+        currentNode = activeList[idx];
+        breadcrumbTitles.push(currentNode.label);
+        activeList = (currentNode.subOptions || []).filter(b => b.label.trim());
+      } else {
+        break;
+      }
+    }
+
+    return {
+      currentNode,
+      activeList,
+      level: path.length,
+      breadcrumbTitles
+    };
+  };
+
   // Reset or initialize the phone mockup chat simulation
   const resetChatSimulation = (
     initPatientText?: string, 
     initResponseText?: string, 
-    initButtons?: BotButton[],
-    customMenuType?: "TEXT_NUMBER" | "WA_LIST"
+    initButtons?: BotButton[]
   ) => {
-    const activeMenuType = customMenuType !== undefined ? customMenuType : menuType;
+    setSimulatedNavPath([]);
+    setSimulatedAtLeaf(false);
     const patientText = initPatientText !== undefined ? initPatientText : (keywords.split(',')[0]?.trim() || "halo");
     const botText = initResponseText !== undefined ? initResponseText : (response || "Halo! Ada yang bisa kami bantu?");
     const activeButtons = initButtons !== undefined ? initButtons : buttonsList.filter(b => b.label.trim());
-    const formattedBotText = activeMenuType === "WA_LIST" 
-      ? botText 
-      : formatBotMessage(botText, activeButtons, false);
+    const formattedBotText = formatBotMessage(botText, activeButtons, false, 0);
 
-    setIsListSheetOpen(false);
     setSimulatedChatHistory([
       {
         id: "msg-1",
@@ -202,10 +225,28 @@ export default function BotPage() {
         sender: "bot",
         text: formattedBotText,
         buttons: activeButtons,
-        isListMenu: activeMenuType === "WA_LIST",
         time: "10:45"
       }
     ]);
+  };
+
+  // Recursive Normalizer for N-Level Nested Buttons
+  const normalizeButtonsRecursively = (items: any[]): BotButton[] => {
+    if (!Array.isArray(items)) return [];
+    return items.map((b, idx) => ({
+      id: b.id || Math.random().toString(36).substring(2, 9),
+      label: b.label || "",
+      description: b.description || "",
+      type: b.type || (b.description ? "LIST_ITEM" : "QUICK_REPLY"),
+      actionType: b.actionType || "DIRECT_REPLY",
+      replyMessage: b.replyMessage || "",
+      includeBackToMenu: b.includeBackToMenu !== undefined ? b.includeBackToMenu : true,
+      value: b.value || `${idx + 1}`,
+      hasSubMenu: !!b.hasSubMenu || (Array.isArray(b.subOptions) && b.subOptions.length > 0),
+      subOptions: Array.isArray(b.subOptions) && b.subOptions.length > 0
+        ? normalizeButtonsRecursively(b.subOptions)
+        : []
+    }));
   };
 
   const openCreateModal = () => {
@@ -215,13 +256,11 @@ export default function BotPage() {
     setKeywords("");
     setResponse("");
     setButtonsList([]);
-    setMenuType("TEXT_NUMBER");
-    setListButtonText("Silahkan Pilih :");
-    setSectionTitle("Pilihan Menu Layanan");
+    setExpandedPaths({ "0": true });
     setIsActive(true);
     setSelectedSessionId("ALL");
     setTestInput("");
-    resetChatSimulation("halo", "(Ketik pesan pembuka bot di form sebelah kiri...)", [], "TEXT_NUMBER");
+    resetChatSimulation("halo", "(Ketik pesan pembuka bot di form sebelah kiri...)", []);
     setIsModalOpen(true);
   };
 
@@ -235,20 +274,12 @@ export default function BotPage() {
     setSelectedSessionId(rule.sessionId || "ALL");
 
     let parsedBtns: any[] = [];
-    let detectedMenuType: "TEXT_NUMBER" | "WA_LIST" = "TEXT_NUMBER";
-    let detectedListBtnText = "Silahkan Pilih :";
-    let detectedSectionTitle = "Pilihan Menu Layanan";
-
     if (rule.buttons) {
       try {
         const parsed = typeof rule.buttons === 'string' ? JSON.parse(rule.buttons) : rule.buttons;
         if (Array.isArray(parsed)) {
           parsedBtns = parsed;
-          detectedMenuType = "TEXT_NUMBER";
         } else if (parsed && typeof parsed === 'object') {
-          detectedMenuType = parsed.menuType === "WA_LIST" ? "WA_LIST" : "TEXT_NUMBER";
-          detectedListBtnText = parsed.listButtonText || "Silahkan Pilih :";
-          detectedSectionTitle = parsed.sectionTitle || "Pilihan Menu Layanan";
           parsedBtns = Array.isArray(parsed.items) ? parsed.items : [];
         }
       } catch {
@@ -256,34 +287,114 @@ export default function BotPage() {
       }
     }
 
-    setMenuType(detectedMenuType);
-    setListButtonText(detectedListBtnText);
-    setSectionTitle(detectedSectionTitle);
-
-    const normalizedBtns: BotButton[] = Array.isArray(parsedBtns)
-      ? parsedBtns.map(b => ({
-          id: b.id || Math.random().toString(36).substring(2, 9),
-          label: b.label || "",
-          description: b.description || "",
-          type: b.type || (b.description ? "LIST_ITEM" : "QUICK_REPLY"),
-          actionType: b.actionType || "DIRECT_REPLY",
-          replyMessage: b.replyMessage || "",
-          includeBackToMenu: b.includeBackToMenu !== undefined ? b.includeBackToMenu : true,
-          value: b.value || "",
-          hasSubMenu: !!b.hasSubMenu || (Array.isArray(b.subOptions) && b.subOptions.length > 0),
-          subOptions: Array.isArray(b.subOptions) ? b.subOptions : []
-        }))
-      : [];
-
+    const normalizedBtns = normalizeButtonsRecursively(parsedBtns);
     setButtonsList(normalizedBtns);
+    setExpandedPaths({ "0": true });
     setTestInput("");
     const firstKeyword = rule.keywords.split(',')[0]?.trim() || "halo";
-    resetChatSimulation(firstKeyword, rule.response, normalizedBtns, detectedMenuType);
+    resetChatSimulation(firstKeyword, rule.response, normalizedBtns);
     setIsModalOpen(true);
   };
 
-  const handleAddButton = () => {
-    if (buttonsList.length >= 10) return;
+  // Accordion Toggle and Batch Expand/Collapse Handlers
+  const toggleAccordion = (pathKey: string) => {
+    setExpandedPaths(prev => ({
+      ...prev,
+      [pathKey]: !prev[pathKey]
+    }));
+  };
+
+  const expandAllAccordions = () => {
+    const allKeys: Record<string, boolean> = {};
+    const collect = (list: BotButton[], prefix: string) => {
+      list.forEach((item, idx) => {
+        const k = prefix ? `${prefix}-${idx}` : `${idx}`;
+        allKeys[k] = true;
+        if (item.subOptions && item.subOptions.length > 0) {
+          collect(item.subOptions, k);
+        }
+      });
+    };
+    collect(buttonsList, "");
+    setExpandedPaths(allKeys);
+  };
+
+  const collapseAllAccordions = () => {
+    setExpandedPaths({});
+  };
+
+  // Recursive Tree Modification Helpers
+  const updateItemAtPath = (items: BotButton[], path: number[], field: keyof BotButton, val: any): BotButton[] => {
+    if (path.length === 0) return items;
+    const [head, ...tail] = path;
+    return items.map((item, idx) => {
+      if (idx !== head) return item;
+      if (tail.length === 0) {
+        return { ...item, [field]: val };
+      }
+      return {
+        ...item,
+        subOptions: updateItemAtPath(item.subOptions || [], tail, field, val)
+      };
+    });
+  };
+
+  const addSubItemAtPath = (items: BotButton[], parentPath: number[]) => {
+    let createdPathKey = "";
+
+    const helper = (currentItems: BotButton[], path: number[], currentPathKey: string): BotButton[] => {
+      if (path.length === 0) {
+        const newChildIndex = currentItems.length;
+        createdPathKey = currentPathKey ? `${currentPathKey}-${newChildIndex}` : `${newChildIndex}`;
+        const newItem: BotButton = {
+          id: Math.random().toString(36).substring(2, 9),
+          label: "",
+          description: "",
+          type: "LIST_ITEM",
+          actionType: "DIRECT_REPLY",
+          replyMessage: "",
+          includeBackToMenu: true,
+          value: `${newChildIndex + 1}`,
+          hasSubMenu: false,
+          subOptions: []
+        };
+        return [...currentItems, newItem];
+      }
+
+      const [head, ...tail] = path;
+      return currentItems.map((item, idx) => {
+        if (idx !== head) return item;
+        const nextKey = currentPathKey ? `${currentPathKey}-${idx}` : `${idx}`;
+        return {
+          ...item,
+          hasSubMenu: true,
+          subOptions: helper(item.subOptions || [], tail, nextKey)
+        };
+      });
+    };
+
+    const newItems = helper(items, parentPath, "");
+    return { newItems, createdPathKey };
+  };
+
+  const removeItemAtPath = (items: BotButton[], path: number[]): BotButton[] => {
+    if (path.length === 0) return items;
+    const [head, ...tail] = path;
+    if (tail.length === 0) {
+      return items.filter((_, idx) => idx !== head);
+    }
+    return items.map((item, idx) => {
+      if (idx !== head) return item;
+      return {
+        ...item,
+        subOptions: removeItemAtPath(item.subOptions || [], tail)
+      };
+    });
+  };
+
+  const handleAddRootOption = () => {
+    if (buttonsList.length >= 50) return;
+    const newIndex = buttonsList.length;
     const newBtn: BotButton = {
       id: Math.random().toString(36).substring(2, 9),
       label: "",
@@ -292,56 +403,25 @@ export default function BotPage() {
       actionType: "DIRECT_REPLY",
       replyMessage: "",
       includeBackToMenu: true,
-      value: `${buttonsList.length + 1}`,
+      value: `${newIndex + 1}`,
       hasSubMenu: false,
       subOptions: []
     };
     const updated = [...buttonsList, newBtn];
     setButtonsList(updated);
-    // Live update mockup preview
-    const activeBtns = updated.filter(b => b.label.trim());
-    if (activeBtns.length > 0) {
-      setSimulatedChatHistory(prev => prev.map((msg, idx) => idx === 1 ? { 
-        ...msg, 
-        text: formatBotMessage(response || "Halo! Silakan pilih layanan:", activeBtns, false),
-        buttons: activeBtns
-      } : msg));
-    }
+    setExpandedPaths(prev => ({
+      ...prev,
+      [`${newIndex}`]: true
+    }));
   };
 
-  const handleRemoveButton = (index: number) => {
-    const updated = buttonsList.filter((_, i) => i !== index);
-    setButtonsList(updated);
-    const activeBtns = updated.filter(b => b.label.trim());
-    setSimulatedChatHistory(prev => prev.map((msg, idx) => idx === 1 ? { 
-      ...msg, 
-      text: formatBotMessage(response || "Halo! Silakan pilih layanan:", activeBtns, false),
-      buttons: activeBtns
-    } : msg));
-  };
-
-  const handleUpdateButton = (index: number, field: keyof BotButton, val: any) => {
-    const updated = buttonsList.map((btn, i) => i === index ? { ...btn, [field]: val } : btn);
-    setButtonsList(updated);
-    if (field === 'label' || field === 'description' || field === 'hasSubMenu' || field === 'subOptions') {
-      const activeBtns = updated.filter(b => b.label.trim());
-      setSimulatedChatHistory(prev => prev.map((msg, idx) => idx === 1 ? { 
-        ...msg, 
-        text: menuType === "WA_LIST" ? (response || "Halo! Silakan pilih layanan:") : formatBotMessage(response || "Halo! Silakan pilih layanan:", activeBtns, false),
-        buttons: activeBtns,
-        isListMenu: menuType === "WA_LIST"
-      } : msg));
-    }
-  };
-
-  // Load the comprehensive 8 hospital menu list preset with nested poliklinik sub-options
-  const handleLoadHospital8MenuPreset = (forcedType?: "TEXT_NUMBER" | "WA_LIST") => {
-    const targetType = forcedType || "WA_LIST";
+  // Load the comprehensive 8 hospital menu list preset with nested poliklinik sub-options (Up to 3 levels)
+  const handleLoadHospital8MenuPreset = () => {
     const presetItems: BotButton[] = [
       {
         id: "opt_1",
         label: "👨‍⚕️ Info RS dan Dokter",
-        description: "informasi RS dan Jadwal Dokter",
+        description: "informasi RS dan Jadwal Dokter Spesialis",
         type: "LIST_ITEM",
         actionType: "DIRECT_REPLY",
         replyMessage: `📋 *Jadwal Praktik Dokter RS Avisena:*\nSilakan pilih poliklinik spesialis yang ingin Anda tanyakan:`,
@@ -353,24 +433,72 @@ export default function BotPage() {
             id: "sub_1",
             label: "Poli Anak & Tumbuh Kembang",
             description: "dr. Ahmad, Sp.A & dr. Dian, Sp.A",
-            replyMessage: `👶 *Jadwal Praktik Poli Anak RS Avisena:*\n\n• dr. Ahmad, Sp.A: Senin - Jumat (08.00 - 12.00 WIB)\n• dr. Dian, Sp.A: Selasa, Kamis, Sabtu (13.00 - 16.00 WIB)\n\nLokasi: Poliklinik Lantai 2, Gedung Rawat Jalan.`
+            type: "LIST_ITEM",
+            actionType: "DIRECT_REPLY",
+            replyMessage: `👶 *Pilih Dokter Spesialis Anak RS Avisena:*`,
+            includeBackToMenu: true,
+            hasSubMenu: true,
+            subOptions: [
+              {
+                id: "sub_1_1",
+                label: "dr. Ahmad, Sp.A (Spesialis Anak)",
+                description: "Senin - Jumat (08.00 - 12.00 WIB)",
+                type: "LIST_ITEM",
+                actionType: "DIRECT_REPLY",
+                replyMessage: `👶 *Jadwal Praktik dr. Ahmad, Sp.A:*\n• Hari: Senin - Jumat\n• Jam: 08.00 - 12.00 WIB\n• Lokasi: Poliklinik Lantai 2, Ruang 201.\n\nUntuk pendaftaran dapat dilakukan online H-1.`
+              },
+              {
+                id: "sub_1_2",
+                label: "dr. Dian, Sp.A (Konsultan Tumbuh Kembang)",
+                description: "Selasa, Kamis, Sabtu (13.00 - 16.00 WIB)",
+                type: "LIST_ITEM",
+                actionType: "DIRECT_REPLY",
+                replyMessage: `👶 *Jadwal Praktik dr. Dian, Sp.A:*\n• Hari: Selasa, Kamis, Sabtu\n• Jam: 13.00 - 16.00 WIB\n• Lokasi: Poliklinik Lantai 2, Ruang 203.\n\nMelayani skrining nutrisi & tumbuh kembang anak.`
+              }
+            ]
           },
           {
             id: "sub_2",
             label: "Poli Penyakit Dalam (Internis)",
             description: "dr. Siti, Sp.PD & dr. Hendra, Sp.PD",
-            replyMessage: `🩺 *Jadwal Praktik Poli Penyakit Dalam:*\n\n• dr. Siti, Sp.PD: Senin - Sabtu (09.00 - 14.00 WIB)\n• dr. Hendra, Sp.PD: Senin, Rabu, Jumat (16.00 - 19.00 WIB)\n\nLokasi: Poliklinik Lantai 1, Gedung Utama.`
+            type: "LIST_ITEM",
+            actionType: "DIRECT_REPLY",
+            replyMessage: `🩺 *Pilih Dokter Spesialis Penyakit Dalam:*`,
+            includeBackToMenu: true,
+            hasSubMenu: true,
+            subOptions: [
+              {
+                id: "sub_2_1",
+                label: "dr. Siti, Sp.PD (Spesialis Internis)",
+                description: "Senin - Sabtu (09.00 - 14.00 WIB)",
+                type: "LIST_ITEM",
+                actionType: "DIRECT_REPLY",
+                replyMessage: `🩺 *Jadwal Praktik dr. Siti, Sp.PD:*\n• Hari: Senin - Sabtu\n• Jam: 09.00 - 14.00 WIB\n• Lokasi: Poliklinik Lantai 1, Gedung Utama.`
+              },
+              {
+                id: "sub_2_2",
+                label: "dr. Hendra, Sp.PD (Konsultan Gastro)",
+                description: "Senin, Rabu, Jumat (16.00 - 19.00 WIB)",
+                type: "LIST_ITEM",
+                actionType: "DIRECT_REPLY",
+                replyMessage: `🩺 *Jadwal Praktik dr. Hendra, Sp.PD:*\n• Hari: Senin, Rabu, Jumat\n• Jam: 16.00 - 19.00 WIB\n• Lokasi: Poliklinik Lantai 1, Gedung Utama.`
+              }
+            ]
           },
           {
             id: "sub_3",
             label: "Poli Kandungan & Kebidanan (Obgyn)",
             description: "dr. Maya, Sp.OG (USG 4D)",
+            type: "LIST_ITEM",
+            actionType: "DIRECT_REPLY",
             replyMessage: `🤰 *Jadwal Praktik Poli Kandungan (Obgyn):*\n\n• dr. Maya, Sp.OG: Senin - Kamis (10.00 - 15.00 WIB)\n• dr. Reza, Sp.OG: Jumat & Sabtu (09.00 - 13.00 WIB)\n\nLayanan: Pemeriksaan Kehamilan, USG 4D, & Konsultasi Fertilitas.`
           },
           {
             id: "sub_4",
             label: "Poli Gigi & Bedah Mulut",
             description: "drg. Budi & drg. Rina, Sp.BM",
+            type: "LIST_ITEM",
+            actionType: "DIRECT_REPLY",
             replyMessage: `🦷 *Jadwal Praktik Poli Gigi & Bedah Mulut:*\n\n• drg. Budi: Senin - Jumat (13.00 - 17.00 WIB)\n• drg. Rina, Sp.BM: Selasa & Kamis (17.00 - 20.00 WIB)\n\nLayanan: Tambal Gigi, Scaling, Cabut Gigi Bungsu, & Ortodonti.`
           }
         ]
@@ -447,15 +575,40 @@ export default function BotPage() {
       }
     ];
 
-    setMenuType(targetType);
-    setListButtonText("Silahkan Pilih :");
-    setSectionTitle("Layanan Rumah Sakit Avisena");
     setButtonsList(presetItems);
+    setExpandedPaths({ "0": true, "0-0": true });
     if (!name) setName("Menu Layanan Resmi Rumah Sakit");
     if (!keywords) setKeywords("halo, menu, bantuan, dokter, rsu avisena");
     const introMsg = "Halo Sahabat Avisena 👋\nSelamat datang di WhatsApp Official RSU Avisena.\nAda yang bisa kami bantu hari ini?\n\nKami siap mendampingi kesehatan Anda melalui pilihan layanan di bawah.\n\nBersama RSU Avisena, kesehatan Anda adalah prioritas kami 💙";
     setResponse(introMsg);
-    resetChatSimulation("halo", introMsg, presetItems, targetType);
+    resetChatSimulation("halo", introMsg, presetItems);
+  };
+
+  // Clean and sanitize button list recursively for database payload
+  const cleanButtonsRecursively = (items: BotButton[]): any[] => {
+    if (!Array.isArray(items)) return [];
+    return items
+      .filter(b => b.label.trim())
+      .map(b => {
+        const item: any = {
+          id: b.id || Math.random().toString(36).substring(2, 9),
+          label: b.label.trim(),
+          description: b.description ? b.description.trim() : "",
+          type: b.type || "LIST_ITEM",
+          actionType: b.actionType || "DIRECT_REPLY",
+          replyMessage: b.replyMessage ? b.replyMessage.trim() : "",
+          includeBackToMenu: b.includeBackToMenu !== false,
+          value: b.value ? b.value.trim() : "",
+          hasSubMenu: !!b.hasSubMenu
+        };
+        if (b.hasSubMenu && Array.isArray(b.subOptions) && b.subOptions.length > 0) {
+          const cleanedSubs = cleanButtonsRecursively(b.subOptions);
+          if (cleanedSubs.length > 0) {
+            item.subOptions = cleanedSubs;
+          }
+        }
+        return item;
+      });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -465,27 +618,10 @@ export default function BotPage() {
 
     setSubmitting(true);
     try {
-      const validButtons = buttonsList
-        .filter(b => b.label.trim())
-        .map(b => ({
-          id: b.id || Math.random().toString(36).substring(2, 9),
-          label: b.label.trim(),
-          description: b.description ? b.description.trim() : "",
-          type: b.type,
-          actionType: b.actionType,
-          replyMessage: b.replyMessage ? b.replyMessage.trim() : "",
-          includeBackToMenu: b.includeBackToMenu,
-          value: b.value ? b.value.trim() : "",
-          hasSubMenu: !!b.hasSubMenu,
-          subOptions: b.hasSubMenu && Array.isArray(b.subOptions) 
-            ? b.subOptions.filter(so => so.label.trim()) 
-            : undefined
-        }));
+      const validButtons = cleanButtonsRecursively(buttonsList);
 
       const buttonPayload = validButtons.length > 0 ? {
-        menuType,
-        listButtonText: listButtonText.trim() || "Silahkan Pilih :",
-        sectionTitle: sectionTitle.trim() || "Pilihan Menu Layanan",
+        menuType: "TEXT_NUMBER",
         items: validButtons
       } : null;
 
@@ -536,8 +672,7 @@ export default function BotPage() {
   };
 
   // Handler when user clicks an interactive button or list item inside Phone Mockup
-  const handlePreviewOptionClick = (btn: BotButton) => {
-    setIsListSheetOpen(false);
+  const handlePreviewOptionClick = (btn: BotButton, clickedIndex?: number) => {
     const timeNow = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
     if (btn.type === "URL") {
@@ -559,86 +694,142 @@ export default function BotPage() {
       time: timeNow
     };
 
-    // 2. Check if this is "Kembali ke Menu" or '0'
-    if (btn.id === "menu" || btn.value === "0" || btn.value?.toLowerCase() === "menu" || btn.label.toLowerCase().includes("menu utama")) {
-      const activeBtns = buttonsList.filter(b => b.label.trim());
+    // 2. Check if clicked 'MENU' / jump to root
+    if (btn.id === "menu-root" || btn.value?.toLowerCase() === "menu") {
+      setSimulatedNavPath([]);
+      setSimulatedAtLeaf(false);
+      const rootActive = buttonsList.filter(b => b.label.trim());
       const botMsg: ChatMessage = {
         id: `bot-${Date.now() + 1}`,
         sender: "bot",
-        text: menuType === "WA_LIST" ? (response || "Halo! Selamat datang di Menu Utama.") : formatBotMessage(response || "Halo! Selamat datang di Menu Utama.", activeBtns, false),
-        buttons: activeBtns,
-        isListMenu: menuType === "WA_LIST",
+        text: formatBotMessage(response || "Halo! Selamat datang di Menu Utama Avisena.", rootActive, false, 0),
+        buttons: rootActive,
         time: timeNow
       };
       setSimulatedChatHistory(prev => [...prev, patientMsg, botMsg]);
       return;
     }
 
-    // 3. Check if this option has nested sub-options!
-    if (btn.hasSubMenu && Array.isArray(btn.subOptions) && btn.subOptions.length > 0) {
-      const subButtons: BotButton[] = [
-        ...btn.subOptions.map((so, sIdx) => ({
-          id: so.id || `sub_${sIdx + 1}`,
-          label: so.label,
-          description: so.description,
-          type: "LIST_ITEM" as const,
-          actionType: "DIRECT_REPLY" as const,
-          replyMessage: so.replyMessage,
-          value: `${sIdx + 1}`
-        })),
-        {
-          id: "menu",
-          label: "0. Kembali ke Menu Utama",
+    // 3. Check if clicked '0' (Kembali ke menu sebelumnya)
+    if (btn.id === "back" || btn.value === "0" || btn.label.toLowerCase().includes("kembali")) {
+      let nextNavPath = [...simulatedNavPath];
+      if (simulatedAtLeaf) {
+        // Return from leaf reply to the current menu where the leaf was picked
+        setSimulatedAtLeaf(false);
+      } else if (nextNavPath.length > 0) {
+        // Pop 1 level up in hierarchy
+        nextNavPath.pop();
+        setSimulatedNavPath(nextNavPath);
+        setSimulatedAtLeaf(false);
+      }
+
+      const { currentNode, activeList, level } = resolveSimulatedState(buttonsList, nextNavPath);
+      let botText = "";
+      let isSub = false;
+      if (nextNavPath.length === 0) {
+        botText = response || "Halo! Selamat datang di Menu Utama Avisena.";
+        isSub = false;
+      } else {
+        botText = currentNode?.replyMessage || `Silakan pilih informasi untuk *${currentNode?.label}*:`;
+        isSub = true;
+      }
+
+      const backButtonList: BotButton[] = [
+        ...activeList,
+        ...(nextNavPath.length > 0 ? [{
+          id: "back",
+          label: nextNavPath.length <= 1 ? "0. Kembali ke Menu Utama" : "0. Kembali ke Menu Sebelumnya",
           type: "QUICK_REPLY" as const,
           actionType: "DIRECT_REPLY" as const,
-          replyMessage: response,
+          replyMessage: "",
           value: "0"
-        }
+        }] : [])
       ];
 
-      const subPrompt = btn.replyMessage || `Silakan pilih poliklinik / informasi untuk *${btn.label}*:`;
       const botMsg: ChatMessage = {
         id: `bot-${Date.now() + 1}`,
         sender: "bot",
-        text: formatBotMessage(subPrompt, btn.subOptions, true),
-        buttons: subButtons,
-        isListMenu: false,
+        text: formatBotMessage(botText, activeList, isSub, level),
+        buttons: backButtonList,
         time: timeNow
       };
       setSimulatedChatHistory(prev => [...prev, patientMsg, botMsg]);
       return;
     }
 
-    // 4. Regular reply message
+    // 4. Check if clicked option has sub-options (Branch / Nested Sub-Menu)
+    if (btn.hasSubMenu && Array.isArray(btn.subOptions) && btn.subOptions.length > 0) {
+      const { activeList: currentLevelList } = resolveSimulatedState(buttonsList, simulatedNavPath);
+      const idx = clickedIndex !== undefined ? clickedIndex : currentLevelList.findIndex(b => b.id === btn.id);
+      const newPath = [...simulatedNavPath, idx >= 0 ? idx : 0];
+      setSimulatedNavPath(newPath);
+      setSimulatedAtLeaf(false);
+
+      const subActive = (btn.subOptions || []).filter(b => b.label.trim());
+      const subPrompt = btn.replyMessage?.trim() || `Silakan pilih informasi untuk *${btn.label}*:`;
+
+      const subButtons: BotButton[] = [
+        ...subActive,
+        {
+          id: "back",
+          label: newPath.length <= 1 ? "0. Kembali ke Menu Utama" : "0. Kembali ke Menu Sebelumnya",
+          type: "QUICK_REPLY" as const,
+          actionType: "DIRECT_REPLY" as const,
+          replyMessage: "",
+          value: "0"
+        }
+      ];
+
+      const botMsg: ChatMessage = {
+        id: `bot-${Date.now() + 1}`,
+        sender: "bot",
+        text: formatBotMessage(subPrompt, subActive, true, newPath.length),
+        buttons: subButtons,
+        time: timeNow
+      };
+      setSimulatedChatHistory(prev => [...prev, patientMsg, botMsg]);
+      return;
+    }
+
+    // 5. Leaf option with direct reply message
     if (btn.replyMessage?.trim()) {
-      let replyWithMenu = btn.replyMessage.trim();
-      if (!replyWithMenu.includes('0') && !replyWithMenu.toLowerCase().includes('menu')) {
-        replyWithMenu = `${replyWithMenu}\n\n👉 *Ketik 0 atau MENU untuk kembali ke menu utama.*`;
+      setSimulatedAtLeaf(true);
+      let replyWithGuide = btn.replyMessage.trim();
+      if (!replyWithGuide.includes('0') && !replyWithGuide.toLowerCase().includes('menu')) {
+        replyWithGuide = `${replyWithGuide}\n\n👉 *Ketik 0 untuk kembali ke menu sebelumnya, atau ketik MENU untuk ke Menu Utama.*`;
       }
+
       const returnBtn: BotButton[] = [
         {
-          id: "menu",
-          label: "0. Kembali ke Menu Utama",
-          type: "QUICK_REPLY",
-          actionType: "DIRECT_REPLY",
-          replyMessage: response,
+          id: "back",
+          label: simulatedNavPath.length === 0 ? "0. Kembali ke Menu Utama" : "0. Kembali ke Menu Sebelumnya",
+          type: "QUICK_REPLY" as const,
+          actionType: "DIRECT_REPLY" as const,
+          replyMessage: "",
           value: "0"
+        },
+        {
+          id: "menu-root",
+          label: "Menu Utama",
+          type: "QUICK_REPLY" as const,
+          actionType: "DIRECT_REPLY" as const,
+          replyMessage: "",
+          value: "menu"
         }
       ];
 
       const botMsg: ChatMessage = {
         id: `bot-${Date.now() + 1}`,
         sender: "bot",
-        text: replyWithMenu,
+        text: replyWithGuide,
         buttons: returnBtn,
-        isListMenu: false,
         time: timeNow
       };
       setSimulatedChatHistory(prev => [...prev, patientMsg, botMsg]);
       return;
     }
 
-    // 5. Match against other saved rules in database
+    // 6. Match against other saved rules in database
     const searchTarget = (btn.value || btn.label).toLowerCase().trim();
     const otherMatch = rules.find(r => {
       if (!r.isActive) return false;
@@ -660,29 +851,27 @@ export default function BotPage() {
         sender: "bot",
         text: otherMatch.response,
         buttons: Array.isArray(otherBtns) ? otherBtns : [],
-        isListMenu: false,
         time: timeNow
       };
       setSimulatedChatHistory(prev => [...prev, patientMsg, botMsg]);
       return;
     }
 
-    // 6. Fallback
+    // 7. Fallback
     const fallbackMsg: ChatMessage = {
       id: `bot-${Date.now() + 1}`,
       sender: "bot",
       text: `Respon untuk pilihan "${btn.label}" belum diatur. Anda dapat mengetik pesan balasan langsung di formulir sebelah kiri.`,
       buttons: [
         {
-          id: "menu",
-          label: "0. Kembali ke Menu Utama",
-          type: "QUICK_REPLY",
-          actionType: "DIRECT_REPLY",
+          id: "back",
+          label: "0. Kembali ke Menu",
+          type: "QUICK_REPLY" as const,
+          actionType: "DIRECT_REPLY" as const,
           replyMessage: response,
           value: "0"
         }
       ],
-      isListMenu: false,
       time: timeNow
     };
     setSimulatedChatHistory(prev => [...prev, patientMsg, fallbackMsg]);
@@ -694,40 +883,49 @@ export default function BotPage() {
     setTestInput("");
     const timeNow = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
+    // Check typing '0', 'kembali', 'back'
+    if (text === '0' || text.toLowerCase() === 'kembali' || text.toLowerCase() === 'back') {
+      handlePreviewOptionClick({
+        id: "back",
+        label: "0. Kembali",
+        type: "QUICK_REPLY",
+        actionType: "DIRECT_REPLY",
+        replyMessage: "",
+        value: "0"
+      });
+      return;
+    }
+
+    // Check typing 'menu', 'utama', 'awal'
+    if (text.toLowerCase() === 'menu' || text.toLowerCase() === 'utama' || text.toLowerCase() === 'awal') {
+      handlePreviewOptionClick({
+        id: "menu-root",
+        label: "Menu Utama",
+        type: "QUICK_REPLY",
+        actionType: "DIRECT_REPLY",
+        replyMessage: "",
+        value: "menu"
+      });
+      return;
+    }
+
+    // 1. Check numeric option match against the current active level!
+    const { activeList } = resolveSimulatedState(buttonsList, simulatedNavPath);
+    const numInput = parseInt(text, 10);
+    if (!isNaN(numInput) && numInput >= 1 && numInput <= activeList.length) {
+      const selectedBtn = activeList[numInput - 1];
+      if (selectedBtn) {
+        handlePreviewOptionClick(selectedBtn, numInput - 1);
+        return;
+      }
+    }
+
     const patientMsg: ChatMessage = {
       id: `patient-${Date.now()}`,
       sender: "patient",
       text: text,
       time: timeNow
     };
-
-    // Check typing '0', 'menu', 'kembali'
-    if (text === '0' || text.toLowerCase() === 'menu' || text.toLowerCase() === 'kembali') {
-      const activeBtns = buttonsList.filter(b => b.label.trim());
-      const botMsg: ChatMessage = {
-        id: `bot-${Date.now() + 1}`,
-        sender: "bot",
-        text: menuType === "WA_LIST" ? (response || "Halo! Selamat datang di Menu Utama.") : formatBotMessage(response || "Halo! Selamat datang di Menu Utama.", activeBtns, false),
-        buttons: activeBtns,
-        isListMenu: menuType === "WA_LIST",
-        time: timeNow
-      };
-      setSimulatedChatHistory(prev => [...prev, patientMsg, botMsg]);
-      return;
-    }
-
-    // 1. Check numeric option match against the latest displayed bot message!
-    const lastBotMsg = [...simulatedChatHistory].reverse().find(m => m.sender === 'bot');
-    const numInput = parseInt(text, 10);
-    if (!isNaN(numInput) && lastBotMsg && lastBotMsg.buttons && lastBotMsg.buttons.length > 0) {
-      if (numInput >= 1 && numInput <= lastBotMsg.buttons.length) {
-        const selectedBtn = lastBotMsg.buttons[numInput - 1];
-        if (selectedBtn) {
-          handlePreviewOptionClick(selectedBtn);
-          return;
-        }
-      }
-    }
 
     // 2. Check keyword match with current edited rule
     const currentKws = keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
@@ -737,13 +935,14 @@ export default function BotPage() {
       (triggerType === "CONTAINS" && currentKws.some(k => cleanTest.includes(k)));
 
     if (matchesCurrent) {
+      setSimulatedNavPath([]);
+      setSimulatedAtLeaf(false);
       const activeBtns = buttonsList.filter(b => b.label.trim());
       const botMsg: ChatMessage = {
         id: `bot-${Date.now() + 1}`,
         sender: "bot",
-        text: menuType === "WA_LIST" ? (response || "(Pesan bot kosong)") : formatBotMessage(response || "(Pesan bot kosong)", activeBtns),
+        text: formatBotMessage(response || "(Pesan bot kosong)", activeBtns, false, 0),
         buttons: activeBtns,
-        isListMenu: menuType === "WA_LIST",
         time: timeNow
       };
       setSimulatedChatHistory(prev => [...prev, patientMsg, botMsg]);
@@ -771,20 +970,17 @@ export default function BotPage() {
         sender: "bot",
         text: otherMatch.response,
         buttons: Array.isArray(otherBtns) ? otherBtns : [],
-        isListMenu: otherBtns.length > 3,
         time: timeNow
       };
       setSimulatedChatHistory(prev => [...prev, patientMsg, botMsg]);
       return;
     }
 
-    // 4. Unmatched
     const unmatchedMsg: ChatMessage = {
       id: `bot-${Date.now() + 1}`,
       sender: "bot",
-      text: "Maaf, pesan Anda belum kami kenali. Silakan ketik angka pilihan menu (1-8) atau klik tombol menu di bawah.",
-      buttons: buttonsList.filter(b => b.label.trim()),
-      isListMenu: menuType === "WA_LIST",
+      text: `Maaf, pesan Anda belum kami kenali. Silakan ketik angka pilihan menu (1-${activeList.length || buttonsList.length || 8}) atau ketik 0 untuk kembali.`,
+      buttons: activeList.length > 0 ? activeList : buttonsList.filter(b => b.label.trim()),
       time: timeNow
     };
     setSimulatedChatHistory(prev => [...prev, patientMsg, unmatchedMsg]);
@@ -807,6 +1003,378 @@ export default function BotPage() {
 
   const insertQuickText = (textToInsert: string) => {
     setResponse(prev => prev + textToInsert);
+  };
+
+  // Recursive Accordion Menu Tree Renderer for N-Level Nesting
+  const renderMenuTree = (
+    items: BotButton[], 
+    parentPath: number[] = [], 
+    level: number = 1
+  ): React.ReactNode => {
+    if (!items || items.length === 0) {
+      return (
+        <div className="p-3 text-center border border-dashed rounded-lg text-muted-foreground text-[11px] bg-muted/20">
+          Belum ada sub-pilihan di Level {level}. Klik tombol "+ Tambah Sub-Pilihan" untuk menambahkan.
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-2.5">
+        {items.map((btn, idx) => {
+          const currentPath = [...parentPath, idx];
+          const pathKey = currentPath.join("-");
+          const isOpen = !!expandedPaths[pathKey];
+          const displayNum = currentPath.map(p => p + 1).join(".");
+
+          // Visual styles differentiated per nesting depth
+          const levelColors: Record<number, { border: string; bgHeader: string; badge: string; levelBadge: string }> = {
+            1: {
+              border: "border-border/80 hover:border-[#00A389]/60",
+              bgHeader: isOpen ? "bg-teal-50/70 dark:bg-teal-950/40" : "bg-muted/30 hover:bg-muted/50",
+              badge: "bg-[#00A389] text-white",
+              levelBadge: "bg-teal-100 dark:bg-teal-900/60 text-teal-800 dark:text-teal-200 border-teal-200 dark:border-teal-800"
+            },
+            2: {
+              border: "border-teal-200/90 dark:border-teal-800/80 hover:border-teal-400",
+              bgHeader: isOpen ? "bg-teal-50/50 dark:bg-teal-950/30" : "bg-background hover:bg-muted/40",
+              badge: "bg-teal-700 text-white",
+              levelBadge: "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800"
+            },
+            3: {
+              border: "border-emerald-200/90 dark:border-emerald-800/80 hover:border-emerald-400",
+              bgHeader: isOpen ? "bg-emerald-50/40 dark:bg-emerald-950/30" : "bg-background hover:bg-muted/30",
+              badge: "bg-emerald-700 text-white",
+              levelBadge: "bg-cyan-100 dark:bg-cyan-900/60 text-cyan-800 dark:text-cyan-200 border-cyan-200 dark:border-cyan-800"
+            }
+          };
+
+          const currentStyle = levelColors[level] || {
+            border: "border-cyan-200/90 dark:border-cyan-800/80 hover:border-cyan-400",
+            bgHeader: isOpen ? "bg-cyan-50/30 dark:bg-cyan-950/20" : "bg-background hover:bg-muted/30",
+            badge: "bg-cyan-700 text-white",
+            levelBadge: "bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 border-indigo-200 dark:border-indigo-800"
+          };
+
+          return (
+            <div 
+              key={btn.id || pathKey} 
+              className={cn(
+                "rounded-xl border transition-all duration-200 shadow-2xs overflow-hidden",
+                currentStyle.border,
+                isOpen ? "ring-1 ring-[#00A389]/30 shadow-xs" : ""
+              )}
+            >
+              {/* Accordion Header (Click anywhere to expand/collapse) */}
+              <div 
+                onClick={() => toggleAccordion(pathKey)}
+                className={cn(
+                  "p-3 flex items-center justify-between gap-2.5 cursor-pointer transition-colors select-none",
+                  currentStyle.bgHeader
+                )}
+              >
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  {/* Number Badge */}
+                  <span className={cn(
+                    "h-6 px-1.5 min-w-[24px] rounded-md text-[11px] flex items-center justify-center font-mono font-bold shrink-0 shadow-2xs",
+                    currentStyle.badge
+                  )}>
+                    {displayNum}
+                  </span>
+
+                  {/* Title & Level Badge & Snippet */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-bold text-foreground truncate max-w-[220px] sm:max-w-[340px]">
+                        {btn.label ? btn.label : <span className="text-muted-foreground italic font-normal">(Belum ada judul pilihan)</span>}
+                      </span>
+
+                      {/* Level Indicator Pill */}
+                      <span className={cn(
+                        "text-[9px] font-semibold px-1.5 py-0.2 rounded border font-mono",
+                        currentStyle.levelBadge
+                      )}>
+                        Lvl {level}
+                      </span>
+
+                      {/* Branch vs Leaf Type Badge */}
+                      {btn.hasSubMenu ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-700 dark:text-teal-300 bg-teal-100 dark:bg-teal-950/80 px-2 py-0.5 rounded-full border border-teal-200 dark:border-teal-800">
+                          <Layers className="w-3 h-3 text-[#00A389]" />
+                          Sub-Menu ({(btn.subOptions || []).length} pilihan)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
+                          <MessageSquare className="w-3 h-3 text-[#00A389]" />
+                          Jawaban Langsung
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Preview description snippet when collapsed */}
+                    {!isOpen && btn.description && (
+                      <p className="text-[11px] text-muted-foreground truncate max-w-[380px] mt-0.5">
+                        {btn.description}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right side controls */}
+                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  {/* Quick Add Sub-Item Button if hasSubMenu */}
+                  {btn.hasSubMenu && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const { newItems, createdPathKey } = addSubItemAtPath(buttonsList, currentPath);
+                        setButtonsList(newItems);
+                        setExpandedPaths(prev => ({
+                          ...prev,
+                          [pathKey]: true,
+                          [createdPathKey]: true
+                        }));
+                      }}
+                      className="h-6 px-2 text-[10px] font-medium bg-[#00A389]/10 hover:bg-[#00A389]/20 text-[#007A67] dark:text-teal-300 rounded flex items-center gap-1 transition-colors cursor-pointer"
+                      title={`Tambah sub-pilihan ke dalam pilihan ${displayNum}`}
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span className="hidden sm:inline">Sub-Pilihan</span>
+                    </button>
+                  )}
+
+                  {/* Delete Option Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newItems = removeItemAtPath(buttonsList, currentPath);
+                      setButtonsList(newItems);
+                    }}
+                    className="p-1.5 text-muted-foreground hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                    title="Hapus Pilihan Ini"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Chevron Toggle Icon */}
+                  <button
+                    type="button"
+                    onClick={() => toggleAccordion(pathKey)}
+                    className="p-1 text-muted-foreground hover:text-foreground rounded transition-transform cursor-pointer"
+                  >
+                    <ChevronDown className={cn(
+                      "w-4 h-4 transition-transform duration-200",
+                      isOpen ? "rotate-180 text-[#00A389]" : ""
+                    )} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Accordion Body Content */}
+              {isOpen && (
+                <div className="p-3.5 pt-2 bg-background/90 space-y-3 border-t border-border/60">
+                  
+                  {/* Inputs: Title & Description */}
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                    <div className="sm:col-span-6">
+                      <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">
+                        Judul Pilihan Menu <span className="text-[#00A389] font-mono">({displayNum})</span>
+                      </Label>
+                      <Input
+                        placeholder={`Contoh: Jadwal Praktik Dokter`}
+                        value={btn.label}
+                        onChange={(e) => {
+                          const updated = updateItemAtPath(buttonsList, currentPath, "label", e.target.value);
+                          setButtonsList(updated);
+                        }}
+                        className="h-9 text-xs bg-background border-border"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-6">
+                      <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">
+                        Deskripsi Singkat (Muncul di Bawah Judul)
+                      </Label>
+                      <Input
+                        placeholder="Contoh: Info jadwal dokter spesialis & umum"
+                        value={btn.description || ""}
+                        onChange={(e) => {
+                          const updated = updateItemAtPath(buttonsList, currentPath, "description", e.target.value);
+                          setButtonsList(updated);
+                        }}
+                        className="h-9 text-xs bg-background border-border"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Option Mode Selector: Direct Reply vs Nested Sub-Menu */}
+                  <div className="pt-2 border-t border-border/40 space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-muted/30 p-2 rounded-lg border border-border/60">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-semibold text-foreground">
+                          Tipe Respon Pilihan #{displayNum}:
+                        </span>
+                        {btn.hasSubMenu && (
+                          <span className="text-[10px] font-bold text-teal-700 dark:text-teal-300 bg-teal-100 dark:bg-teal-950 px-2 py-0.5 rounded-full">
+                            {(btn.subOptions || []).length} Sub-Pilihan di Level {level + 1}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1 bg-background p-0.5 rounded-md border border-border self-start sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = updateItemAtPath(buttonsList, currentPath, "hasSubMenu", false);
+                            setButtonsList(updated);
+                          }}
+                          className={cn(
+                            "px-2.5 py-1 rounded text-[11px] font-medium transition-all flex items-center gap-1 cursor-pointer",
+                            !btn.hasSubMenu ? "bg-[#00A389] text-white shadow-2xs" : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          Jawaban Langsung
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            let updated = updateItemAtPath(buttonsList, currentPath, "hasSubMenu", true);
+                            if (!btn.subOptions || btn.subOptions.length === 0) {
+                              const initialChild: BotButton = {
+                                id: Math.random().toString(36).substring(2, 9),
+                                label: "",
+                                description: "",
+                                type: "LIST_ITEM",
+                                actionType: "DIRECT_REPLY",
+                                replyMessage: "",
+                                includeBackToMenu: true,
+                                value: "1",
+                                hasSubMenu: false,
+                                subOptions: []
+                              };
+                              updated = updateItemAtPath(updated, currentPath, "subOptions", [initialChild]);
+                              setExpandedPaths(prev => ({
+                                ...prev,
+                                [`${pathKey}-0`]: true
+                              }));
+                            }
+                            setButtonsList(updated);
+                          }}
+                          className={cn(
+                            "px-2.5 py-1 rounded text-[11px] font-medium transition-all flex items-center gap-1 cursor-pointer",
+                            btn.hasSubMenu ? "bg-[#00A389] text-white shadow-2xs" : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          <Layers className="w-3 h-3" />
+                          Sub-Menu Bersarang (Level {level + 1})
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Sub-Menu Bersarang Editor (Recursive N-Level) */}
+                    {btn.hasSubMenu ? (
+                      <div className="space-y-3 bg-teal-50/40 dark:bg-teal-950/20 p-3 rounded-xl border border-teal-200/70 dark:border-teal-800/60 mt-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-teal-200/60 dark:border-teal-800/40 pb-2">
+                          <span className="text-[11px] font-bold text-teal-950 dark:text-teal-200 flex items-center gap-1.5">
+                            <Layers className="w-3.5 h-3.5 text-[#00A389]" />
+                            Daftar Sub-Pilihan (Level {level + 1}) di Bawah "{btn.label || `Opsi ${displayNum}`}":
+                          </span>
+                          <span className="text-[10px] text-muted-foreground font-mono bg-background px-1.5 py-0.5 rounded border">
+                            Auto '0' = Kembali ke Level {level}
+                          </span>
+                        </div>
+
+                        {/* Sub-menu Intro prompt text */}
+                        <div>
+                          <Label className="text-[11px] font-medium text-muted-foreground block mb-1">
+                            Pesan Pengantar Sub-Menu Level {level + 1}:
+                          </Label>
+                          <Input
+                            placeholder={`Contoh: Silakan pilih informasi untuk ${btn.label || 'layanan ini'}:`}
+                            value={btn.replyMessage}
+                            onChange={(e) => {
+                              const updated = updateItemAtPath(buttonsList, currentPath, "replyMessage", e.target.value);
+                              setButtonsList(updated);
+                            }}
+                            className="h-8.5 text-xs bg-background border-border"
+                          />
+                        </div>
+
+                        {/* RECURSIVE CALL: Render Children Items at next level! */}
+                        <div className="pt-1">
+                          {renderMenuTree(btn.subOptions || [], currentPath, level + 1)}
+                        </div>
+
+                        {/* Button to add child item */}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const { newItems, createdPathKey } = addSubItemAtPath(buttonsList, currentPath);
+                            setButtonsList(newItems);
+                            setExpandedPaths(prev => ({
+                              ...prev,
+                              [createdPathKey]: true
+                            }));
+                          }}
+                          className="w-full h-8 text-[11px] border-dashed border-[#00A389]/60 text-[#00A389] hover:bg-[#EBF8F5] dark:hover:bg-[#1A332E] cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          Tambah Sub-Pilihan di Level {level + 1} ({(btn.subOptions || []).length} aktif)
+                        </Button>
+                      </div>
+                    ) : (
+                      /* Direct reply message editor */
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1">
+                            <ArrowRight className="w-3 h-3 text-[#00A389]" />
+                            Pesan Balasan yang Muncul Saat Pasien Memilih Opsi #{displayNum}:
+                          </Label>
+                          <span className="text-[10px] text-muted-foreground italic">
+                            Ketik isi balasan detail di bawah
+                          </span>
+                        </div>
+
+                        <textarea
+                          rows={3}
+                          placeholder={`Tulis isi informasi detail untuk pilihan "${btn.label || displayNum}"...\nContoh:\n*Jadwal Praktik Dokter RS Avisena:*\n• Poli Anak: 08.00 - 12.00 WIB\n• Poli Gigi: 13.00 - 17.00 WIB`}
+                          value={btn.replyMessage}
+                          onChange={(e) => {
+                            const updated = updateItemAtPath(buttonsList, currentPath, "replyMessage", e.target.value);
+                            setButtonsList(updated);
+                          }}
+                          className="w-full p-2.5 rounded-lg border border-border bg-background text-xs font-sans focus:outline-none focus:ring-1 focus:ring-primary/60 resize-none leading-relaxed"
+                        />
+
+                        <div className="flex items-center justify-between pt-0.5">
+                          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={btn.includeBackToMenu !== false}
+                              onChange={(e) => {
+                                const updated = updateItemAtPath(buttonsList, currentPath, "includeBackToMenu", e.target.checked);
+                                setButtonsList(updated);
+                              }}
+                              className="w-3.5 h-3.5 rounded text-[#00A389] focus:ring-[#00A389]"
+                            />
+                            <span>Sertakan panduan otomatis: <b>"Ketik 0 untuk kembali ke menu sebelumnya, atau MENU untuk ke Menu Utama"</b></span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -940,17 +1508,12 @@ export default function BotPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredRules.map((rule) => {
             let ruleButtons: BotButton[] = [];
-            let ruleMenuType: "TEXT_NUMBER" | "WA_LIST" = "TEXT_NUMBER";
-            let ruleListBtnText = "Silahkan Pilih :";
             if (rule.buttons) {
               try {
                 const parsed = typeof rule.buttons === 'string' ? JSON.parse(rule.buttons) : rule.buttons;
                 if (Array.isArray(parsed)) {
                   ruleButtons = parsed;
-                  ruleMenuType = "TEXT_NUMBER";
                 } else if (parsed && typeof parsed === 'object') {
-                  ruleMenuType = parsed.menuType === "WA_LIST" ? "WA_LIST" : "TEXT_NUMBER";
-                  ruleListBtnText = parsed.listButtonText || "Silahkan Pilih :";
                   ruleButtons = Array.isArray(parsed.items) ? parsed.items : [];
                 }
               } catch {}
@@ -1001,17 +1564,10 @@ export default function BotPage() {
 
                         {/* Interactive Menu Badge */}
                         {Array.isArray(ruleButtons) && ruleButtons.length > 0 && (
-                          ruleMenuType === "WA_LIST" ? (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950 dark:border-emerald-800 dark:text-emerald-300">
-                              <Menu className="w-3 h-3 text-[#00A389]" />
-                              WA List: "{ruleListBtnText}" ({ruleButtons.length})
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 bg-teal-100 text-[#006D5B] dark:bg-teal-950 dark:text-teal-300">
-                              <List className="w-3 h-3" />
-                              {ruleButtons.length} Menu Angka (1-{ruleButtons.length})
-                            </span>
-                          )
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 bg-teal-100 text-[#006D5B] dark:bg-teal-950 dark:text-teal-300">
+                            <List className="w-3 h-3" />
+                            {ruleButtons.length} Menu Angka (1-{ruleButtons.length})
+                          </span>
                         )}
 
                         {/* Active Status Badge */}
@@ -1067,17 +1623,8 @@ export default function BotPage() {
                   {Array.isArray(ruleButtons) && ruleButtons.length > 0 && (
                     <div className="pt-2 border-t border-border/50 space-y-1.5">
                       <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                        {ruleMenuType === "WA_LIST" ? (
-                          <>
-                            <Menu className="w-3 h-3 text-[#00A389]" />
-                            Tombol List WhatsApp: "{ruleListBtnText}" ({ruleButtons.length} Pilihan):
-                          </>
-                        ) : (
-                          <>
-                            <List className="w-3 h-3 text-[#00A389]" />
-                            Daftar Pilihan Menu (Ketik angka 1-{ruleButtons.length}):
-                          </>
-                        )}
+                        <List className="w-3 h-3 text-[#00A389]" />
+                        Daftar Pilihan Menu (Ketik angka 1-{ruleButtons.length}):
                       </span>
                       <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
                         {ruleButtons.map((btn, bIdx) => (
@@ -1304,426 +1851,79 @@ export default function BotPage() {
                   />
                 </div>
 
-                {/* Format Tampilan Menu Bot (WA List vs Angka Standar) */}
+                {/* Format Menu Pilihan Pasien (Accordion Bersarang N-Level) */}
                 <div className="space-y-3 pt-3 pb-1 border-t border-border/70">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
                       <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-[#00A389]" />
-                        Tipe Format Tampilan Bot WhatsApp
+                        <List className="w-3.5 h-3.5 text-[#00A389]" />
+                        Daftar Pilihan Menu Pasien (Accordion Bersarang)
                       </Label>
                       <p className="text-[11px] text-muted-foreground">
-                        Pilih gaya tampilan menu balasan yang ingin dikirimkan kepada pasien di WhatsApp
+                        Klik pilihan untuk membuka/mengubah isi accordion. Mendukung sub-menu bersarang tak terbatas (Level 1, 2, 3...) dan ketik 0 untuk kembali ke menu sebelumnya.
                       </p>
                     </div>
+
+                    <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={expandAllAccordions}
+                        className="text-[10px] h-7 px-2 font-medium border-border hover:bg-muted/70 cursor-pointer"
+                        title="Buka seluruh accordion pilihan"
+                      >
+                        <ChevronsUpDown className="w-3 h-3 mr-1" />
+                        Buka Semua
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={collapseAllAccordions}
+                        className="text-[10px] h-7 px-2 font-medium border-border hover:bg-muted/70 cursor-pointer"
+                        title="Tutup seluruh accordion pilihan"
+                      >
+                        <ChevronDown className="w-3 h-3 mr-1" />
+                        Tutup Semua
+                      </Button>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleLoadHospital8MenuPreset}
+                        className="bg-[#00A389] hover:bg-[#008771] text-white text-[10px] h-7 px-2.5 font-medium shadow-xs shrink-0 cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 mr-1" />
+                        Muat 8 Menu Standar RS
+                      </Button>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Option 1: WhatsApp Native List Menu (Hermina Style) */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMenuType("WA_LIST");
-                        resetChatSimulation(undefined, undefined, undefined, "WA_LIST");
-                      }}
-                      className={cn(
-                        "p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer",
-                        menuType === "WA_LIST"
-                          ? "bg-teal-50/90 border-[#00A389] text-[#006D5B] dark:bg-teal-950/40 dark:border-[#00A389] dark:text-teal-300 shadow-sm ring-1 ring-[#00A389]"
-                          : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
-                      )}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-bold text-xs flex items-center gap-1.5 text-foreground">
-                            <Menu className="w-4 h-4 text-[#00A389]" />
-                            WhatsApp List Menu
-                          </span>
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#00A389]/15 text-[#00A389]">
-                            Mirip RS Hermina
-                          </span>
-                        </div>
-                        <p className="text-[11px] leading-relaxed text-muted-foreground">
-                          Memunculkan tombol <b>"{listButtonText || 'Silahkan Pilih :'}"</b> yang membuka popup/sheet pilihan resmi WhatsApp saat diklik pasien.
-                        </p>
-                      </div>
-                      <div className="pt-2 flex items-center justify-between text-[10px] font-semibold border-t border-border/40 mt-2">
-                        <span>Sheet Pilihan Interaktif</span>
-                        {menuType === "WA_LIST" ? (
-                          <span className="text-[#00A389] flex items-center gap-1 font-bold">
-                            <Check className="w-3 h-3" /> Aktif
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">Pilih Tipe Ini</span>
-                        )}
-                      </div>
-                    </button>
-
-                    {/* Option 2: Menu Teks Bernomor */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMenuType("TEXT_NUMBER");
-                        resetChatSimulation(undefined, undefined, undefined, "TEXT_NUMBER");
-                      }}
-                      className={cn(
-                        "p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer",
-                        menuType === "TEXT_NUMBER"
-                          ? "bg-teal-50/90 border-[#00A389] text-[#006D5B] dark:bg-teal-950/40 dark:border-[#00A389] dark:text-teal-300 shadow-sm ring-1 ring-[#00A389]"
-                          : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
-                      )}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-bold text-xs flex items-center gap-1.5 text-foreground">
-                            <List className="w-4 h-4 text-[#10448E]" />
-                            Menu Teks Angka
-                          </span>
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
-                            Standar Kompatibel
-                          </span>
-                        </div>
-                        <p className="text-[11px] leading-relaxed text-muted-foreground">
-                          Format balasan pesan teks berangka (1, 2, 3...). Pasien membalas dengan mengetik angka atau kata kunci untuk memilih menu.
-                        </p>
-                      </div>
-                      <div className="pt-2 flex items-center justify-between text-[10px] font-semibold border-t border-border/40 mt-2">
-                        <span>Balas Ketik Angka 1-10</span>
-                        {menuType === "TEXT_NUMBER" ? (
-                          <span className="text-[#00A389] flex items-center gap-1 font-bold">
-                            <Check className="w-3 h-3" /> Aktif
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">Pilih Tipe Ini</span>
-                        )}
-                      </div>
-                    </button>
-                  </div>
-
-                  {/* Konfigurasi Khusus WA_LIST */}
-                  {menuType === "WA_LIST" && (
-                    <div className="bg-teal-50/70 dark:bg-teal-950/20 p-3 rounded-xl border border-teal-200/80 dark:border-teal-800/60 space-y-2.5">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <div>
-                          <Label className="text-[11px] font-medium text-teal-950 dark:text-teal-200 mb-1 block">
-                            Label Tombol Pilihan WhatsApp:
-                          </Label>
-                          <Input
-                            value={listButtonText}
-                            onChange={(e) => setListButtonText(e.target.value)}
-                            placeholder="Contoh: Silahkan Pilih :"
-                            className="h-8 text-xs bg-background border-border"
-                          />
-                          <span className="text-[10px] text-muted-foreground mt-0.5 block">
-                            Tombol ini muncul di bawah chat (default: <code>Silahkan Pilih :</code>)
-                          </span>
-                        </div>
-
-                        <div>
-                          <Label className="text-[11px] font-medium text-teal-950 dark:text-teal-200 mb-1 block">
-                            Judul Seksi Menu (Section Header):
-                          </Label>
-                          <Input
-                            value={sectionTitle}
-                            onChange={(e) => setSectionTitle(e.target.value)}
-                            placeholder="Contoh: Pilihan Menu Layanan"
-                            className="h-8 text-xs bg-background border-border"
-                          />
-                          <span className="text-[10px] text-muted-foreground mt-0.5 block">
-                            Judul header saat popup sheet pilihan terbuka
-                          </span>
-                        </div>
-                      </div>
+                  {/* Render Recursive Accordion Tree */}
+                  {buttonsList.length > 0 ? (
+                    <div className="pt-1">
+                      {renderMenuTree(buttonsList, [], 1)}
+                    </div>
+                  ) : (
+                    <div className="p-4 text-center border border-dashed rounded-xl text-muted-foreground text-xs bg-muted/20 space-y-1.5">
+                      <p className="font-semibold text-foreground">Belum ada pilihan menu yang ditambahkan</p>
+                      <p className="text-[11px]">Tambahkan pilihan menu utama baru atau klik "Muat 8 Menu Standar RS" untuk template siap pakai.</p>
                     </div>
                   )}
 
-                  {/* Preset 1-Click Button for 8 Hospital Items */}
-                  <div className="flex items-center justify-between bg-teal-50/70 dark:bg-teal-950/30 p-2.5 rounded-xl border border-teal-200 dark:border-teal-800">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-[#00A389] shrink-0" />
-                      <span className="text-xs font-semibold text-teal-900 dark:text-teal-200">
-                        Ingin menu layanan rumah sakit lengkap (seperti RS Hermina)?
-                      </span>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => handleLoadHospital8MenuPreset("WA_LIST")}
-                      className="bg-[#00A389] hover:bg-[#008771] text-white text-[11px] h-7 px-2.5 font-medium shadow-xs"
-                    >
-                      Muat 8 Menu RS
-                    </Button>
-                  </div>
-
-                  {/* List Items Editor */}
-                  {buttonsList.length > 0 && (
-                    <div className="space-y-3 pt-1">
-                      {buttonsList.map((btn, idx) => (
-                        <div key={idx} className="p-3.5 bg-muted/30 rounded-xl border border-border/80 space-y-3 transition-all hover:border-[#00A389]/40">
-                          
-                          {/* Item Header */}
-                          <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2">
-                            <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                              <span className="w-5 h-5 rounded-full bg-[#00A389] text-white text-[11px] flex items-center justify-center font-bold">
-                                {idx + 1}
-                              </span>
-                              Opsi #{idx + 1}: {btn.label ? `"${btn.label}"` : "(Belum ada judul)"}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveButton(idx)}
-                              className="text-muted-foreground hover:text-rose-600 transition-colors p-1"
-                              title="Hapus Opsi Ini"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-
-                          {/* Grid Input: Title & Description */}
-                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
-                            <div className="sm:col-span-6">
-                              <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">
-                                Judul Pilihan Menu
-                              </Label>
-                              <Input
-                                placeholder={`Contoh: ${idx + 1}. Jadwal Praktik Dokter`}
-                                value={btn.label}
-                                onChange={(e) => handleUpdateButton(idx, "label", e.target.value)}
-                                className="h-9 text-xs bg-background border-border"
-                              />
-                            </div>
-
-                            <div className="sm:col-span-6">
-                              <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">
-                                Deskripsi Singkat (Muncul di Bawah Judul)
-                              </Label>
-                              <Input
-                                placeholder="Contoh: Info jadwal dokter spesialis & umum"
-                                value={btn.description || ""}
-                                onChange={(e) => handleUpdateButton(idx, "description", e.target.value)}
-                                className="h-9 text-xs bg-background border-border"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Mode Selector for Option: Direct Answer vs Nested Sub-Menu */}
-                          <div className="pt-2 border-t border-border/40 space-y-2">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/60">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[11px] font-semibold text-foreground">
-                                  Tipe Respon Opsi #{idx + 1}:
-                                </span>
-                                {btn.hasSubMenu && (
-                                  <span className="text-[10px] font-bold text-teal-700 dark:text-teal-300 bg-teal-100 dark:bg-teal-950 px-1.5 py-0.5 rounded">
-                                    {btn.subOptions?.length || 0} Sub-Pilihan
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1 bg-background p-0.5 rounded-md border border-border self-start sm:self-auto">
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateButton(idx, "hasSubMenu", false)}
-                                  className={cn(
-                                    "px-2.5 py-1 rounded text-[11px] font-medium transition-all",
-                                    !btn.hasSubMenu ? "bg-[#00A389] text-white shadow-2xs" : "text-muted-foreground hover:text-foreground"
-                                  )}
-                                >
-                                  Jawaban Langsung
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    handleUpdateButton(idx, "hasSubMenu", true);
-                                    if (!btn.subOptions || btn.subOptions.length === 0) {
-                                      handleUpdateButton(idx, "subOptions", [
-                                        { id: "sub_1", label: "Poli Anak", description: "dr. Ahmad, Sp.A", replyMessage: "Jadwal Poli Anak: Senin - Jumat (08.00 - 12.00 WIB)" },
-                                        { id: "sub_2", label: "Poli Penyakit Dalam", description: "dr. Siti, Sp.PD", replyMessage: "Jadwal Poli Penyakit Dalam: Senin - Sabtu (09.00 - 14.00 WIB)" }
-                                      ]);
-                                    }
-                                  }}
-                                  className={cn(
-                                    "px-2.5 py-1 rounded text-[11px] font-medium transition-all flex items-center gap-1",
-                                    btn.hasSubMenu ? "bg-[#00A389] text-white shadow-2xs" : "text-muted-foreground hover:text-foreground"
-                                  )}
-                                >
-                                  <Layers className="w-3 h-3" />
-                                  Sub-Menu Bersarang
-                                </button>
-                              </div>
-                            </div>
-
-                            {btn.hasSubMenu ? (
-                              /* Nested Sub-Menu Editor */
-                              <div className="space-y-2.5 bg-teal-50/50 dark:bg-teal-950/30 p-3 rounded-xl border border-teal-200/80 dark:border-teal-800/80 mt-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-bold text-teal-950 dark:text-teal-200 flex items-center gap-1">
-                                    <Layers className="w-3.5 h-3.5 text-[#00A389]" />
-                                    Daftar Sub-Pilihan (Muncul saat pasien memilih opsi #{idx + 1}):
-                                  </span>
-                                  <span className="text-[10px] text-muted-foreground font-mono">Auto 1, 2, ... + 0 Kembali</span>
-                                </div>
-
-                                <div>
-                                  <Label className="text-[10px] font-medium text-muted-foreground block mb-1">
-                                    Pesan Pengantar Sub-Menu:
-                                  </Label>
-                                  <Input
-                                    placeholder={`Contoh: Silakan pilih informasi untuk ${btn.label || 'layanan ini'}:`}
-                                    value={btn.replyMessage}
-                                    onChange={(e) => handleUpdateButton(idx, "replyMessage", e.target.value)}
-                                    className="h-8 text-xs bg-background border-border"
-                                  />
-                                </div>
-
-                                {/* Sub-items list */}
-                                <div className="space-y-2 pt-1">
-                                  {(btn.subOptions || []).map((sub, sIdx) => (
-                                    <div key={sIdx} className="p-2.5 bg-background rounded-lg border border-border space-y-2">
-                                      <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-1">
-                                        <span className="text-[11px] font-bold text-foreground flex items-center gap-1.5">
-                                          <span className="w-4 h-4 rounded-full bg-teal-600 text-white text-[10px] flex items-center justify-center font-bold">
-                                            {sIdx + 1}
-                                          </span>
-                                          Sub #{sIdx + 1}: {sub.label || "(Belum ada judul)"}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const newSubs = (btn.subOptions || []).filter((_, i) => i !== sIdx);
-                                            handleUpdateButton(idx, "subOptions", newSubs);
-                                          }}
-                                          className="text-muted-foreground hover:text-rose-600 p-0.5"
-                                          title="Hapus Sub-Pilihan"
-                                        >
-                                          <Trash2 className="w-3 h-3" />
-                                        </button>
-                                      </div>
-
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                        <div>
-                                          <Label className="text-[10px] text-muted-foreground block mb-0.5">Judul Sub-Pilihan</Label>
-                                          <Input
-                                            placeholder="Contoh: Poli Anak"
-                                            value={sub.label}
-                                            onChange={(e) => {
-                                              const newSubs = [...(btn.subOptions || [])];
-                                              newSubs[sIdx] = { ...newSubs[sIdx], label: e.target.value };
-                                              handleUpdateButton(idx, "subOptions", newSubs);
-                                            }}
-                                            className="h-8 text-xs bg-background border-border"
-                                          />
-                                        </div>
-                                        <div>
-                                          <Label className="text-[10px] text-muted-foreground block mb-0.5">Deskripsi Singkat</Label>
-                                          <Input
-                                            placeholder="Contoh: dr. Ahmad, Sp.A"
-                                            value={sub.description || ""}
-                                            onChange={(e) => {
-                                              const newSubs = [...(btn.subOptions || [])];
-                                              newSubs[sIdx] = { ...newSubs[sIdx], description: e.target.value };
-                                              handleUpdateButton(idx, "subOptions", newSubs);
-                                            }}
-                                            className="h-8 text-xs bg-background border-border"
-                                          />
-                                        </div>
-                                      </div>
-
-                                      <div>
-                                        <Label className="text-[10px] font-semibold text-emerald-800 dark:text-emerald-400 block mb-0.5">
-                                          Pesan Balasan yang Muncul Saat Sub-Pilihan Ini Dipilih:
-                                        </Label>
-                                        <textarea
-                                          rows={2}
-                                          placeholder="Contoh: Jadwal Poli Anak: dr. Ahmad, Sp.A (Senin - Jumat 08.00 - 12.00 WIB)"
-                                          value={sub.replyMessage}
-                                          onChange={(e) => {
-                                            const newSubs = [...(btn.subOptions || [])];
-                                            newSubs[sIdx] = { ...newSubs[sIdx], replyMessage: e.target.value };
-                                            handleUpdateButton(idx, "subOptions", newSubs);
-                                          }}
-                                          className="w-full p-2 rounded-lg border border-border bg-background text-xs font-sans focus:outline-none focus:ring-1 focus:ring-primary/60 resize-none leading-relaxed"
-                                        />
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-
-                                {(btn.subOptions?.length || 0) < 6 && (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                      const newSubs = [
-                                        ...(btn.subOptions || []),
-                                        {
-                                          id: `sub_${(btn.subOptions?.length || 0) + 1}`,
-                                          label: "",
-                                          description: "",
-                                          replyMessage: ""
-                                        }
-                                      ];
-                                      handleUpdateButton(idx, "subOptions", newSubs);
-                                    }}
-                                    className="w-full h-8 text-[11px] border-dashed border-[#00A389]/60 text-[#00A389] hover:bg-[#EBF8F5] dark:hover:bg-[#1A332E]"
-                                  >
-                                    <Plus className="w-3 h-3 mr-1" />
-                                    Tambah Sub-Pilihan ({ 6 - (btn.subOptions?.length || 0) } tersisa)
-                                  </Button>
-                                )}
-                              </div>
-                            ) : (
-                              /* Direct reply message textarea */
-                              <div className="space-y-2 pt-1">
-                                <div className="flex items-center justify-between">
-                                  <Label className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1">
-                                    <ArrowRight className="w-3 h-3 text-[#00A389]" />
-                                    Pesan Balasan yang Muncul Saat Pasien Memilih Opsi Ini:
-                                  </Label>
-                                  <span className="text-[10px] text-muted-foreground italic">
-                                    Dikirim langsung oleh bot
-                                  </span>
-                                </div>
-
-                                <textarea
-                                  rows={3}
-                                  placeholder={`Tulis isi informasi detail untuk pilihan "${btn.label || 'ini'}"...\nContoh:\n*Jadwal Praktik Dokter Avisena:*\n• Poli Anak: 08.00 - 12.00 WIB\n• Poli Gigi: 13.00 - 17.00 WIB`}
-                                  value={btn.replyMessage}
-                                  onChange={(e) => handleUpdateButton(idx, "replyMessage", e.target.value)}
-                                  className="w-full p-2.5 rounded-lg border border-border bg-background text-xs font-sans focus:outline-none focus:ring-1 focus:ring-primary/60 resize-none leading-relaxed"
-                                />
-
-                                <div className="flex items-center justify-between pt-0.5">
-                                  <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={btn.includeBackToMenu !== false}
-                                      onChange={(e) => handleUpdateButton(idx, "includeBackToMenu", e.target.checked)}
-                                      className="w-3.5 h-3.5 rounded text-[#00A389] focus:ring-[#00A389]"
-                                    />
-                                    <span>Sertakan panduan <b>"Ketik 0 atau MENU untuk kembali ke menu utama"</b> di bawah pesan balasan ini</span>
-                                  </label>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Add Button Trigger */}
-                  {buttonsList.length < 10 && (
+                  {/* Add Root Menu Button */}
+                  {buttonsList.length < 50 && (
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={handleAddButton}
-                      className="w-full h-9 text-xs border-dashed border-[#00A389]/60 text-[#00A389] hover:bg-[#EBF8F5] dark:hover:bg-[#1A332E] font-medium"
+                      onClick={handleAddRootOption}
+                      className="w-full h-9 text-xs border-dashed border-[#00A389]/60 text-[#00A389] hover:bg-[#EBF8F5] dark:hover:bg-[#1A332E] font-medium cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5 mr-1.5" />
-                      Tambah Pilihan Menu Baru ({ 10 - buttonsList.length } tersisa)
+                      Tambah Pilihan Menu Utama Baru ({buttonsList.length} menu aktif)
                     </Button>
                   )}
                 </div>
@@ -1764,39 +1964,69 @@ export default function BotPage() {
               </div>
             </form>
 
-            {/* Right Section: Realistis WhatsApp Multi-Turn Chat Simulation with Bottom Sheet (5 of 12 Cols) */}
+            {/* Right Section: Realistis WhatsApp Multi-Turn Chat Simulation with N-Level Navigation (5 of 12 Cols) */}
             <div className="lg:col-span-5 bg-[#EFEAE2] dark:bg-[#0B141A] p-5 border-t lg:border-t-0 lg:border-l border-border flex flex-col justify-between max-h-[92vh] relative">
               <div>
-                {/* Phone Header */}
+                {/* Phone Header with Level Breadcrumbs and 0 Back Button */}
                 <div className="bg-[#008069] text-white p-3 rounded-t-xl flex items-center justify-between shadow-sm">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-bold text-xs text-white">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-bold text-xs text-white shrink-0">
                       <Bot className="w-4 h-4" />
                     </div>
-                    <div>
-                      <p className="font-semibold text-xs leading-none">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-xs leading-none truncate">
                         {selectedSessionId !== 'ALL' ? selectedSessionId : 'Avisena Bot'}
                       </p>
-                      <p className="text-[10px] text-teal-100 mt-0.5">
-                        {selectedSessionId !== 'ALL' ? `Target: ${selectedSessionId}` : 'Semua Sesi &bull; Online'}
+                      <p className="text-[10px] text-teal-100 mt-0.5 truncate flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse shrink-0" />
+                        {simulatedNavPath.length === 0 ? "Menu Utama (Level 1)" : `Level ${simulatedNavPath.length + 1} Sub-Menu`}
                       </p>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => resetChatSimulation()}
-                    className="text-white/80 hover:text-white flex items-center gap-1 text-[10px] bg-white/10 px-2 py-1 rounded-md transition-all hover:bg-white/20"
-                    title="Ulangi simulasi dari awal"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    Reset
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {simulatedNavPath.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handlePreviewOptionClick({ id: 'back', label: '0. Kembali', replyMessage: '', value: '0' })}
+                        className="text-white/95 hover:text-white flex items-center gap-1 text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded-md transition-all font-medium cursor-pointer"
+                        title="Kembali ke level sebelumnya (Ketik 0)"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        0 Kembali
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => resetChatSimulation()}
+                      className="text-white/80 hover:text-white flex items-center gap-1 text-[10px] bg-white/10 px-2 py-1 rounded-md transition-all hover:bg-white/20 cursor-pointer"
+                      title="Ulangi simulasi dari awal"
+                    >
+                      Reset
+                    </button>
+                  </div>
                 </div>
 
                 {/* Phone Screen Chat Body (Scrollable Chat Thread) */}
                 <div className="bg-[#EFEAE2] dark:bg-[#0B141A] p-3.5 space-y-3 min-h-[360px] max-h-[480px] overflow-y-auto rounded-b-xl border border-t-0 border-[#008069]/20 shadow-inner relative">
                   
+                  {/* Navigation Breadcrumb inside WhatsApp chat if nested */}
+                  {simulatedNavPath.length > 0 && (
+                    <div className="bg-white/90 dark:bg-slate-800/90 py-1.5 px-2.5 rounded-lg text-[10px] text-muted-foreground flex items-center gap-1.5 shadow-2xs border border-border/50 overflow-x-auto">
+                      <span className="font-bold text-[#00A389] shrink-0">Posisi Menu:</span>
+                      {resolveSimulatedState(buttonsList, simulatedNavPath).breadcrumbTitles.map((crumb, cIdx, arr) => (
+                        <div key={cIdx} className="flex items-center gap-1 shrink-0">
+                          {cIdx > 0 && <span className="text-slate-400 font-bold">›</span>}
+                          <span className={cn(
+                            cIdx === arr.length - 1 ? "font-bold text-foreground bg-teal-50 dark:bg-teal-950/60 text-[#006D5B] dark:text-teal-300 px-1 rounded" : "text-muted-foreground"
+                          )}>
+                            {crumb}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Date Badge */}
                   <div className="text-center">
                     <span className="bg-white/80 dark:bg-slate-800/80 text-[10px] text-muted-foreground px-3 py-0.5 rounded-md shadow-xs">
@@ -1831,25 +2061,11 @@ export default function BotPage() {
                           {msg.time} {msg.sender === "patient" && <Check className="w-3 h-3 text-sky-500 inline ml-0.5" />}
                         </span>
 
-                        {/* Interactive UI: WhatsApp List Button (Hermina Style) */}
-                        {msg.sender === "bot" && (msg.isListMenu || menuType === "WA_LIST") && (
-                          <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 mt-2">
-                            <button
-                              type="button"
-                              onClick={() => setIsListSheetOpen(true)}
-                              className="w-full py-2.5 px-3 bg-white dark:bg-[#1f2c34] hover:bg-slate-50 dark:hover:bg-[#2a3942] text-[#00a884] dark:text-[#00a884] font-semibold text-xs rounded-lg border border-slate-200 dark:border-slate-700/80 flex items-center justify-center gap-2 shadow-2xs transition-all active:scale-[0.98] cursor-pointer group"
-                            >
-                              <Menu className="w-3.5 h-3.5 text-[#00a884] group-hover:scale-110 transition-transform" />
-                              <span>{listButtonText || "Silahkan Pilih :"}</span>
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Standard Numbered Action Pills (Text Number Mode) */}
-                        {msg.sender === "bot" && !msg.isListMenu && menuType !== "WA_LIST" && msg.buttons && msg.buttons.length > 0 && (
+                        {/* Interactive Action Pills */}
+                        {msg.sender === "bot" && msg.buttons && msg.buttons.length > 0 && (
                           <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 space-y-1.5 mt-2">
                             <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold">
-                              <span>Uji Pilihan Pasien:</span>
+                              <span>Pilihan Interaktif:</span>
                               <span className="text-[9px] text-[#00A389]">Klik opsi atau ketik angka</span>
                             </div>
                             <div className="flex flex-wrap gap-1.5">
@@ -1857,17 +2073,30 @@ export default function BotPage() {
                                 <button
                                   key={bIdx}
                                   type="button"
-                                  onClick={() => handlePreviewOptionClick(btn)}
-                                  className="text-left py-1 px-2 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900 text-[#006D5B] dark:text-teal-300 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all shadow-2xs active:scale-[0.98] border border-teal-200/80 dark:border-teal-800 cursor-pointer"
+                                  onClick={() => handlePreviewOptionClick(btn, bIdx)}
+                                  className={cn(
+                                    "text-left py-1 px-2 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all shadow-2xs active:scale-[0.98] border cursor-pointer",
+                                    btn.value === '0' || btn.id === 'back'
+                                      ? "bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-800"
+                                      : btn.value === 'menu' || btn.id === 'menu-root'
+                                      ? "bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 text-sky-800 dark:text-sky-200 border-sky-200 dark:border-sky-800"
+                                      : "bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900 text-[#006D5B] dark:text-teal-300 border-teal-200/80 dark:border-teal-800"
+                                  )}
                                 >
-                                  {btn.value === 'menu' ? (
-                                    <span>Ketik 'MENU'</span>
+                                  {btn.value === 'menu' || btn.id === 'menu-root' ? (
+                                    <span>🏠 Ketik 'MENU'</span>
+                                  ) : btn.value === '0' || btn.id === 'back' ? (
+                                    <span className="flex items-center gap-1">
+                                      <RotateCcw className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                      <span>0. {btn.label.replace(/^0[\.\s\-]+/, '') || "Kembali"}</span>
+                                    </span>
                                   ) : (
                                     <>
                                       <span className="w-4 h-4 rounded-full bg-[#00A389] text-white text-[10px] flex items-center justify-center font-bold">
                                         {bIdx + 1}
                                       </span>
                                       <span>{btn.label.replace(/^\d+[\.\s\-]+/, '') || `Pilihan ${bIdx + 1}`}</span>
+                                      {btn.hasSubMenu && <Layers className="w-2.5 h-2.5 ml-0.5 text-teal-600 dark:text-teal-400" />}
                                     </>
                                   )}
                                 </button>
@@ -1880,85 +2109,10 @@ export default function BotPage() {
                   ))}
 
                   <p className="text-[10px] text-center text-muted-foreground italic pt-1">
-                    {menuType === "WA_LIST" ? (
-                      <span><b>Uji Coba:</b> Klik tombol <b>"{listButtonText || 'Silahkan Pilih :'}"</b> di atas untuk membuka popup sheet pilihan!</span>
-                    ) : (
-                      <span><b>Uji Coba:</b> Klik pilihan di atas atau ketik angka 1-{buttonsList.length || 8} di kolom bawah!</span>
-                    )}
+                    <span><b>Uji Coba:</b> Klik pilihan di atas atau ketik angka/kata kunci di kolom bawah!</span>
                   </p>
 
                 </div>
-
-                {/* Realistic WhatsApp Slide-Up Bottom Sheet Modal Simulation (Hermina Arcamanik Style) */}
-                {isListSheetOpen && (
-                  <div className="absolute inset-0 bg-black/60 z-30 flex flex-col justify-end rounded-xl overflow-hidden backdrop-blur-[1px] animate-in fade-in duration-200">
-                    {/* Backdrop area click to dismiss */}
-                    <div className="flex-1 cursor-pointer" onClick={() => setIsListSheetOpen(false)} />
-
-                    {/* Bottom Sheet Card */}
-                    <div className="bg-white dark:bg-[#111b21] rounded-t-2xl shadow-2xl border-t border-slate-200 dark:border-slate-800 max-h-[85%] flex flex-col animate-in slide-in-from-bottom duration-200">
-                      
-                      {/* Handle Bar */}
-                      <div className="flex justify-center pt-2.5 pb-1">
-                        <div className="w-10 h-1 bg-slate-300 dark:bg-slate-600 rounded-full" />
-                      </div>
-
-                      {/* Header */}
-                      <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                        <button 
-                          type="button" 
-                          onClick={() => setIsListSheetOpen(false)}
-                          className="p-1 -ml-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                          title="Tutup Sheet"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                        <h4 className="font-semibold text-xs text-slate-800 dark:text-slate-100 text-center flex-1 pr-4">
-                          {listButtonText || "Silahkan Pilih :"}
-                        </h4>
-                      </div>
-
-                      {/* Options List */}
-                      <div className="p-2 overflow-y-auto space-y-1 divide-y divide-slate-100 dark:divide-slate-800/60 max-h-[280px]">
-                        {buttonsList.filter(b => b.label.trim()).length === 0 ? (
-                          <div className="py-8 text-center text-xs text-slate-400">
-                            Belum ada pilihan menu. Tambahkan di form sebelah kiri!
-                          </div>
-                        ) : (
-                          buttonsList.filter(b => b.label.trim()).map((btn, idx) => (
-                            <div
-                              key={idx}
-                              onClick={() => handlePreviewOptionClick(btn)}
-                              className="pt-2.5 pb-2.5 px-3 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer transition-colors group"
-                            >
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 group-hover:text-[#00A389] transition-colors leading-tight">
-                                  {btn.label}
-                                </p>
-                                {btn.description && (
-                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1 leading-tight">
-                                    {btn.description}
-                                  </p>
-                                )}
-                              </div>
-                              <div className="w-4 h-4 rounded-full border-2 border-slate-300 dark:border-slate-600 group-hover:border-[#00A389] flex items-center justify-center shrink-0 transition-colors">
-                                <div className="w-2 h-2 rounded-full bg-transparent group-hover:bg-[#00A389] transition-colors" />
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-
-                      {/* Footer Text */}
-                      <div className="py-2.5 px-4 text-center border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-[#0b141a]/50">
-                        <span className="text-[10px] text-slate-400 font-sans">
-                          Tap to select an item
-                        </span>
-                      </div>
-
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Patient Test Input Bar at bottom */}
@@ -1967,7 +2121,7 @@ export default function BotPage() {
                   <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
                     Uji Ketik Pesan / Angka Pilihan:
                   </Label>
-                  <span className="text-[10px] text-muted-foreground">Ketik 1-{buttonsList.length || 8} atau kata kunci</span>
+                  <span className="text-[10px] text-muted-foreground">Ketik 1, 2... atau 0 untuk kembali</span>
                 </div>
                 <div className="flex gap-2">
                   <Input 
@@ -1979,7 +2133,7 @@ export default function BotPage() {
                         handleSendTestMessage();
                       }
                     }}
-                    placeholder={`Ketik angka (1-${buttonsList.length || 8}) atau kata kunci...`}
+                    placeholder={`Ketik angka pilihan atau 0 untuk kembali...`}
                     className="h-9 text-xs bg-white dark:bg-slate-900 border-border"
                   />
                   <Button 

@@ -39,6 +39,11 @@ async function main() {
   });
 
   console.log('Super Admin user created: admin@example.com / password123');
+
+  // 3. Seed Bot Rules
+  const { seedBotRules } = await import('./seed-bot');
+  await seedBotRules(prisma);
+
   console.log('Seeding finished.');
 }
 

@@ -8,7 +8,12 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "db:push": "prisma db push",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "db:seed": "prisma db seed",
+    "db:seed:bot": "ts-node prisma/seed-bot.ts"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@adiwajshing/baileys": "^4.4.0",
